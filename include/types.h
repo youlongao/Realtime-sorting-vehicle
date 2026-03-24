@@ -22,7 +22,6 @@ enum class FaultCode
 	OverPitch,
 	OverRoll,
 	LimitSwitchTriggered,
-	EncoderFault,
 	ActuatorFault,
 	LiftUpperLimit,
 	LiftLowerLimit,
@@ -90,15 +89,6 @@ struct AxisState
 	Timestamp timestamp{SteadyClock::now()};
 };
 
-struct EncoderSample
-{
-	std::int64_t ticks{0};
-	float speed_mps{0.0F};
-	float distance_m{0.0F};
-	Timestamp timestamp{SteadyClock::now()};
-	bool valid{false};
-};
-
 struct LimitSwitchState
 {
 	bool triggered{false};
@@ -135,7 +125,6 @@ struct SensorData
 	PoseData pose{};
 	DistanceReading front_distance{};
 	DownwardReading downward{};
-	EncoderSample encoder{};
 	LimitSwitchState upper_limit{};
 	LimitSwitchState lower_limit{};
 };
@@ -152,7 +141,6 @@ struct RobotState
 using PoseCallback = std::function<void(const PoseData&)>;
 using DistanceCallback = std::function<void(const DistanceReading&)>;
 using DownwardCallback = std::function<void(const DownwardReading&)>;
-using EncoderCallback = std::function<void(const EncoderSample&)>;
 using LimitSwitchCallback = std::function<void(const LimitSwitchState&)>;
 using SafetyCallback = std::function<void(const SafetyStatus&)>;
 }
