@@ -56,11 +56,7 @@ void Logger::log(const LogLevel level, const std::string& message)
 	const std::time_t raw_time = std::chrono::system_clock::to_time_t(now);
 
 	std::tm time_info{};
-#if defined(_WIN32)
-	localtime_s(&time_info, &raw_time);
-#else
 	localtime_r(&raw_time, &time_info);
-#endif
 
 	std::lock_guard<std::mutex> lock(g_log_mutex);
 	std::cout << '[' << std::put_time(&time_info, "%H:%M:%S")
