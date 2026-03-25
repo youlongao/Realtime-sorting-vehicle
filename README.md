@@ -446,6 +446,43 @@ The D layer performs perception and judgement in a structured way:
 
 This design keeps sensor handling, judgement logic, and safety policy separate from low-level drivers and from the higher-level state machine.
 
+# E. Control & Scheduling Layer – Detailed Module Summary
+## Overview
+The E Layer (Control & Scheduling Layer) serves as the decision-making and coordination backbone of the three‑stage stair‑climbing robot.
+It is responsible for:
+State‑driven control – managing the robot’s high‑level climbing state machine.
+Motion sequencing – coordinating the front, middle, and rear mechanisms in the correct order.
+System integration – aggregating perception (D layer), mechanical abstraction (C layer), and safety logic into a single control loop.
+## 1. ClimbingFsm – High‑Level State Machine
+### Design Purpose
+ClimbingFsm implements the core climbing logic using a finite state machine.
+It consumes external completion signals (from the motion coordinator) and safety/perception assessments (from the D layer) to decide when to transition between states.
+### Key Design Choice:
+The FSM does not contain any timing logic or direct actuator calls. It only evaluates boolean completion flags and perception inputs. This keeps the state logic simple, testable, and independent of hardware timing.
+### Safety Integration
+If safety_status.level == SafetyLevel::Fault at the beginning of updateState(), the FSM immediately transitions to Fault.
+The handleError() method allows external modules (e.g., SafetyManager) to forcibly set the FSM into fault mode with a specific fault code.
+## 2. MotionCoordinator – Phase Execution Engine
+### Design Purpose
+MotionCoordinator translates the abstract states from ClimbingFsm into concrete mechanical actions.
+It owns references to the C‑layer modules (FrontSegment, MiddleLiftModule, MiddleDriveModule, RearSupportModule) and calls their phase‑specific methods.
+### Key Design Choice:
+The coordinator does not implement any state machine logic of its own. It simply executes the action associated with the current state and updates its internal flags. The decision to move to the next state remains with ClimbingFsm.
+## 3. RobotController – Top‑Level Orchestrator
+### Design Purpose
+RobotController is the single entry point for the entire control system. It:
+Aggregates all other layers (FSM, coordinator, step detector, pose monitor, safety manager).
+Implements the main control loop (update()).
+Provides thread‑safe access to the current robot state.
+Handles initialization, emergency stops, and system resets.
+### Initialization (init())
+Resets motion phases and transitions the FSM to Idle.
+Performs an initial safety check via SafetyManager.
+Populates the initial RobotState snapshot.
+If the initial safety check returns a fault, init() returns false, indicating the system is not ready to run.
+### Thread Safety
+RobotController uses a std::mutex to protect access to the internal robot_state_.
+All public methods that read or write state (init(), update(), stopAll(), resetSystem(), state()) are protected by the mutex where necessary.
 #  F Module (General Support Layer)
 ## Module Overview
 The F Module serves as the **general support layer** for the entire three‑stage stair‑climbing robot project. It provides cross‑module shared data types, global configuration, utility functions, and logging functionality. This layer offers unified infrastructure for all upper‑level modules (sensors, actuators, state machines, etc.), ensuring code portability and maintainability.
