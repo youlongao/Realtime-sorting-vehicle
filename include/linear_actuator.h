@@ -16,7 +16,6 @@ public:
 	LinearActuator(std::shared_ptr<Pca9685Driver> pwm_driver,
 				   unsigned int forward_pwm_channel,
 				   unsigned int reverse_pwm_channel,
-				   IEncoderFeedback* encoder = nullptr,
 				   ILimitSwitch* upper_limit = nullptr,
 				   ILimitSwitch* lower_limit = nullptr,
 				   float max_travel_m = RobotConfig::Geometry::BODY_LIFT_MAX_TRAVEL_M);
@@ -38,7 +37,6 @@ private:
 	std::shared_ptr<Pca9685Driver> pwm_driver_;
 	unsigned int forward_pwm_channel_;
 	unsigned int reverse_pwm_channel_;
-	IEncoderFeedback* encoder_;
 	ILimitSwitch* upper_limit_;
 	ILimitSwitch* lower_limit_;
 	float max_travel_m_;

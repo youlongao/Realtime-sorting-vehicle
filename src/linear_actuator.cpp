@@ -11,14 +11,12 @@ namespace Robot
 LinearActuator::LinearActuator(std::shared_ptr<Pca9685Driver> pwm_driver,
 							   const unsigned int forward_pwm_channel,
 							   const unsigned int reverse_pwm_channel,
-							   IEncoderFeedback* encoder,
 							   ILimitSwitch* upper_limit,
 							   ILimitSwitch* lower_limit,
 							   const float max_travel_m)
 	: pwm_driver_(std::move(pwm_driver)),
 	  forward_pwm_channel_(forward_pwm_channel),
 	  reverse_pwm_channel_(reverse_pwm_channel),
-	  encoder_(encoder),
 	  upper_limit_(upper_limit),
 	  lower_limit_(lower_limit),
 	  max_travel_m_(max_travel_m)
@@ -156,11 +154,6 @@ AxisState LinearActuator::getAxisState() const
 void LinearActuator::updateCachedState() const
 {
 	std::lock_guard<std::mutex> lock(mutex_);
-	if (encoder_ != nullptr)
-	{
-		axis_state_.position_m = clamp(encoder_->getDistance(), 0.0F, max_travel_m_);
-		axis_state_.homed = true;
-	}
 
 	if (upper_limit_ != nullptr)
 	{
