@@ -1,24 +1,26 @@
 #ifndef LINEAR_ACTUATOR_H
 #define LINEAR_ACTUATOR_H
 
-#include <memory>
 #include <mutex>
+#include <string>
 
 #include "config.h"
 #include "hardware_interfaces.h"
-#include "pca9685_driver.h"
+
+struct gpiod_chip;
+struct gpiod_line_request;
 
 namespace Robot
 {
 class LinearActuator : public ILinearAxis
 {
 public:
-	LinearActuator(std::shared_ptr<Pca9685Driver> pwm_driver,
-				   unsigned int forward_pwm_channel,
-				   unsigned int reverse_pwm_channel,
+	LinearActuator(unsigned int forward_gpio,
+				   unsigned int reverse_gpio,
 				   ILimitSwitch* upper_limit = nullptr,
 				   ILimitSwitch* lower_limit = nullptr,
-				   float max_travel_m = RobotConfig::Geometry::BODY_LIFT_MAX_TRAVEL_M);
+				   float max_travel_m = RobotConfig::Geometry::BODY_LIFT_MAX_TRAVEL_M,
+				   std::string chip_path = RobotConfig::Platform::GPIO_CHIP);
 
 	bool start();
 	void extend(float speed = RobotConfig::Motion::BODY_LIFT_SPEED);
@@ -32,17 +34,23 @@ public:
 	AxisState getAxisState() const override;
 
 private:
+	bool requestLines();
+	void releaseLines();
+	bool setLineValue(unsigned int gpio, bool active);
 	void updateCachedState() const;
 
-	std::shared_ptr<Pca9685Driver> pwm_driver_;
-	unsigned int forward_pwm_channel_;
-	unsigned int reverse_pwm_channel_;
+	std::string chip_path_;
+	unsigned int forward_gpio_;
+	unsigned int reverse_gpio_;
 	ILimitSwitch* upper_limit_;
 	ILimitSwitch* lower_limit_;
 	float max_travel_m_;
 
 	mutable std::mutex mutex_;
 	mutable AxisState axis_state_;
+
+	gpiod_chip* chip_{nullptr};
+	gpiod_line_request* request_{nullptr};
 };
 }
 

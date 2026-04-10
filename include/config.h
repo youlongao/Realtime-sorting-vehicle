@@ -6,14 +6,16 @@
 #define CONFIG_H
 
 #include <cstdint>
+
 namespace RobotConfig
 {
-	// ==== I2C Bus confirguration ===
-	namespace I2C 
+	// ==== I2C bus configuration ====
+	namespace I2C
 	{
-		constexpr uint8_t BUS_ID = 1;	// pin5 defaults I2C bus
-		constexpr uint8_t PCA9685_ADDR = 0x40;	// PCA9685 PWM expansion board address
-		constexpr int PWM_FREQ = 1000;	// Shared PWM frequency for wheel/linear DC motor driving (1kHz)
+		constexpr uint8_t BUS_ID = 1;				// Raspberry Pi default I2C bus
+		constexpr uint8_t PCA9685_ADDR = 0x40;		// Standalone PCA9685 test board address
+		constexpr uint8_t MCP23017_ADDR = 0x20;		// MCP23017 GPIO expander address
+		constexpr int PWM_FREQ = 1000;				// Shared PCA PWM frequency for standalone motor tests
 	}
 
 	namespace IMU
@@ -37,63 +39,89 @@ namespace RobotConfig
 		constexpr float PCA9685_OSCILLATOR_HZ = 25'000'000.0F;
 		constexpr float PCA9685_RESOLUTION = 4096.0F;
 	}
-	// ==== PCA9685 PWM channel allocation (0-15) ====
-	// TB6612 uses one PWM channel per wheel, while each DRV8833-driven actuator uses
-	// two PWM channels:
-	// - *_IN1_IN3 drives the paralleled IN1 + IN3 inputs
-	// - *_IN2_IN4 drives the paralleled IN2 + IN4 inputs
+
+	// ==== Standalone PCA9685 diagnostic channel allocation (0-15) ====
+	// These channels are retained for independent PCA test tools only.
 	namespace PWM_Channels
 	{
-		// TB6612 drive wheels (front and middle sections; rear support section is passive)
-		constexpr uint8_t FRONT_Wheel_L = 0;	// Front Left wheel PWMA
-		constexpr uint8_t FRONT_Wheel_R = 1;	// Front Right wheel PWMB
-		constexpr uint8_t MIDDLE_Wheel_L = 2;	// Middle Left wheel PWMA
-		constexpr uint8_t MIDDLE_Wheel_R = 3;	// Middle Right wheel PWMB
-
-		// DRV8833 lifting/sliding actuators; each carrier is used as one paralleled channel
-		constexpr uint8_t LIFT_1_IN1_IN3 = 4;	// First lift actuator: DRV8833 IN1 + IN3
-		constexpr uint8_t LIFT_1_IN2_IN4 = 5;	// First lift actuator: DRV8833 IN2 + IN4
-		constexpr uint8_t LIFT_2_IN1_IN3 = 6;	// Second lift actuator: DRV8833 IN1 + IN3
-		constexpr uint8_t LIFT_2_IN2_IN4 = 7;	// Second lift actuator: DRV8833 IN2 + IN4
-
-		constexpr uint8_t SLIDE_1_IN1_IN3 = 8;		// Front slider: DRV8833 IN1 + IN3
-		constexpr uint8_t SLIDE_1_IN2_IN4 = 9;		// Front slider: DRV8833 IN2 + IN4
-		constexpr uint8_t SLIDE_2_IN1_IN3 = 10;	// Rear slider: DRV8833 IN1 + IN3
-		constexpr uint8_t SLIDE_2_IN2_IN4 = 11;	// Rear slider: DRV8833 IN2 + IN4
+		constexpr uint8_t FRONT_L_IN1 = 0;
+		constexpr uint8_t FRONT_L_IN2 = 1;
+		constexpr uint8_t FRONT_R_IN3 = 2;
+		constexpr uint8_t FRONT_R_IN4 = 3;
+		constexpr uint8_t MIDDLE_L_IN1 = 4;
+		constexpr uint8_t MIDDLE_L_IN2 = 5;
+		constexpr uint8_t MIDDLE_R_IN3 = 6;
+		constexpr uint8_t MIDDLE_R_IN4 = 7;
+		constexpr uint8_t LIFT_1_IN1_IN3 = 8;
+		constexpr uint8_t LIFT_1_IN2_IN4 = 9;
+		constexpr uint8_t LIFT_2_IN1_IN3 = 10;
+		constexpr uint8_t LIFT_2_IN2_IN4 = 11;
+		constexpr uint8_t SLIDE_1_IN1_IN3 = 12;
+		constexpr uint8_t SLIDE_1_IN2_IN4 = 13;
+		constexpr uint8_t SLIDE_2_IN1_IN3 = 14;
+		constexpr uint8_t SLIDE_2_IN2_IN4 = 15;
 	}
 
-	// Raspberry Pi GPIO Assignment (libgpio v2)
+	// ==== Raspberry Pi direct GPIO allocation for the main robot ====
+	namespace MotorGPIO
+	{
+		// Front wheel DRV8833 (dual-channel)
+		constexpr int FRONT_L_IN1 = 17;		// Physical pin 11
+		constexpr int FRONT_L_IN2 = 18;		// Physical pin 12
+		constexpr int FRONT_R_IN3 = 27;		// Physical pin 13
+		constexpr int FRONT_R_IN4 = 22;		// Physical pin 15
+
+		// Middle wheel DRV8833 (dual-channel)
+		constexpr int MIDDLE_L_IN1 = 23;	// Physical pin 16
+		constexpr int MIDDLE_L_IN2 = 24;	// Physical pin 18
+		constexpr int MIDDLE_R_IN3 = 25;	// Physical pin 22
+		constexpr int MIDDLE_R_IN4 = 8;		// Physical pin 24
+
+		// Paralleled DRV8833 linear actuators
+		constexpr int LIFT_1_IN1_IN3 = 10;	// Physical pin 19
+		constexpr int LIFT_1_IN2_IN4 = 9;	// Physical pin 21
+		constexpr int LIFT_2_IN1_IN3 = 11;	// Physical pin 23
+		constexpr int LIFT_2_IN2_IN4 = 7;	// Physical pin 26
+		constexpr int SLIDE_1_IN1_IN3 = 5;	// Physical pin 29
+		constexpr int SLIDE_1_IN2_IN4 = 6;	// Physical pin 31
+		constexpr int SLIDE_2_IN1_IN3 = 12;	// Physical pin 32
+		constexpr int SLIDE_2_IN2_IN4 = 13;	// Physical pin 33
+	}
+
+	// Direct GPIOs that remain on the Raspberry Pi for non-motor hardware.
 	namespace GPIO
 	{
-		// TB6612 direction control pin (AIN1/AIN2, BIN1/BIN2)
-		// Front section
-		constexpr int FRONT_L_IN1 = 17;		// GPIO 17
-		constexpr int FRONT_L_IN2 = 18;		// GPIO 18
-		constexpr int FRONT_R_IN1 = 27;		// GPIO 27
-		constexpr int FRONT_R_IN2 = 22;		// GPIO 22
+		constexpr int ULTRASONIC_TRIG = 16;	// Physical pin 36
+		constexpr int ULTRASONIC_ECHO = 26;	// Physical pin 37
+	}
 
-		// Middle section (second motorized wheel pair)
-		constexpr int MID_L_IN1 = 23;		// GPIO 23
-		constexpr int MID_L_IN2 = 24;		// GPIO 24
-		constexpr int MID_R_IN1 = 25;		// GPIO 25
-		constexpr int MID_R_IN2 = 8;		// GPIO 8
+	// Legacy direct-input defaults retained so the old standalone GPIO-input
+	// helper classes continue to compile, even though the main robot now uses
+	// MCP23017 for these signals.
+	namespace CompatibilityGPIO
+	{
+		constexpr int DOWNWARD_DETECTOR = 12;
+	}
 
-		// Sensors connected
-		constexpr int ULTRASONIC_TRIG = 5;			// Ultrasonic tirgger pin
-		constexpr int ULTRASONIC_ECHO = 6;			// Ultrasonic echo pin (Thread blocking is required for I/O listening)
-		constexpr int DOWNWARD_DETECTOR = 12;		// Front downward-facing sensor
-		constexpr int MIDDLE_SUPPORT_DETECTOR = 4;	// Middle support confirmation sensor
-		constexpr int REAR_SUPPORT_DETECTOR = 7;	// Rear support confirmation sensor
+	// ==== MCP23017 input allocation ====
+	namespace MCP23017
+	{
+		constexpr int POLL_INTERVAL_MS = 10;
 
-		// Linear actuator feedback wiring
-		constexpr int LIFT_1_UPPER_LIMIT = 10;		// First lift upper limit
-		constexpr int LIFT_1_LOWER_LIMIT = 11;		// First lift lower limit
-		constexpr int SLIDE_1_UPPER_LIMIT = 13;	// Front slider upper limit
-		constexpr int SLIDE_1_LOWER_LIMIT = 16;	// Front slider lower limit
-		constexpr int SLIDE_2_UPPER_LIMIT = 19;	// Rear slider upper limit
-		constexpr int SLIDE_2_LOWER_LIMIT = 20;	// Rear slider lower limit
-		constexpr int LIFT_2_UPPER_LIMIT = 21;		// Rear lift upper limit
-		constexpr int LIFT_2_LOWER_LIMIT = 26;		// Rear lift lower limit
+		// TCRT5000 digital outputs (DO only; AO is unused)
+		constexpr uint8_t FRONT_DOWNWARD_DO = 0;	// GPA0
+		constexpr uint8_t MIDDLE_SUPPORT_DO = 1;	// GPA1
+		constexpr uint8_t REAR_SUPPORT_DO = 2;		// GPA2
+
+		// Limit switches, wired to ground and read with pull-ups enabled
+		constexpr uint8_t LIFT_1_UPPER_LIMIT = 3;	// GPA3
+		constexpr uint8_t LIFT_1_LOWER_LIMIT = 4;	// GPA4
+		constexpr uint8_t SLIDE_1_UPPER_LIMIT = 5;	// GPA5
+		constexpr uint8_t SLIDE_1_LOWER_LIMIT = 6;	// GPA6
+		constexpr uint8_t SLIDE_2_UPPER_LIMIT = 7;	// GPA7
+		constexpr uint8_t SLIDE_2_LOWER_LIMIT = 8;	// GPB0
+		constexpr uint8_t LIFT_2_UPPER_LIMIT = 9;	// GPB1
+		constexpr uint8_t LIFT_2_LOWER_LIMIT = 10;	// GPB2
 	}
 
 	namespace Sensors
@@ -150,14 +178,13 @@ namespace RobotConfig
 		constexpr int FAULT_LATCH_MS = 500;
 	}
 
-	// ==== Real time and control parameters ====
+	// ==== Real-time and control parameters ====
 	namespace Realtime
-	{	
-		// Achieved through thread cycles or timers [cite:213,360]
-		constexpr int IMU_POLLINGS_MS = 10;		// IMU data samping period (100Hz)
+	{
+		constexpr int IMU_POLLINGS_MS = 10;			// IMU data sampling period (100Hz)
 		constexpr int ULTRASONIC_POLLING_MS = 50;	// Ultrasonic sampling period (20Hz)
-		constexpr int SENSOR_TASK_PRIORITY = 80;	// Sensor thread real time priority
-		constexpr int MOTION_TASK_PRIORITY = 70;	// Motion thread real time priority
+		constexpr int SENSOR_TASK_PRIORITY = 80;
+		constexpr int MOTION_TASK_PRIORITY = 70;
 	}
 }
 

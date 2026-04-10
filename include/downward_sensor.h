@@ -20,7 +20,7 @@ class DownwardSensor : public IDownwardSensor
 {
 public:
 	explicit DownwardSensor(std::string chip_path = RobotConfig::Platform::GPIO_CHIP,
-							 unsigned int line_offset = RobotConfig::GPIO::DOWNWARD_DETECTOR,
+							 unsigned int line_offset = RobotConfig::CompatibilityGPIO::DOWNWARD_DETECTOR,
 							 bool active_on_surface = RobotConfig::Sensors::DOWNWARD_ACTIVE_ON_SURFACE);
 	~DownwardSensor() override;
 

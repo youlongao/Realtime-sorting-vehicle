@@ -6,8 +6,6 @@
 #include <thread>
 
 #include "config.h"
-#include "logger.h"
-#include "motor_driver.h"
 #include "pca9685_driver.h"
 
 using namespace Robot;
@@ -19,6 +17,14 @@ enum class TestTarget
 	Front,
 	Middle,
 	Both
+};
+
+struct WheelBoardChannels
+{
+	unsigned int left_in1;
+	unsigned int left_in2;
+	unsigned int right_in3;
+	unsigned int right_in4;
 };
 
 TestTarget ParseTarget(const std::string& value)
@@ -47,28 +53,45 @@ void PrintUsage(const char* program_name)
 		<< "  forward_ms = 1500\n"
 		<< "  reverse_ms = 1500\n"
 		<< "  cycles     = 3\n\n"
-		<< "Hardware assumptions:\n"
-		<< "  PCA9685 CH0/CH1 -> front wheel PWMA/PWMB\n"
-		<< "  PCA9685 CH2/CH3 -> middle wheel PWMA/PWMB\n"
-		<< "  Front TB6612: AIN1/AIN2=GPIO17/GPIO18, BIN1/BIN2=GPIO27/GPIO22\n"
-		<< "  Middle TB6612: AIN1/AIN2=GPIO23/GPIO24, BIN1/BIN2=GPIO25/GPIO8\n"
-		<< "  TB6612 STBY must be tied high\n"
-		<< "  Motor supply, PCA9685, and Raspberry Pi must share ground\n";
+		<< "Standalone PCA9685 wiring assumptions:\n"
+		<< "  Front wheel board: CH0/CH1/CH2/CH3 -> IN1/IN2/IN3/IN4\n"
+		<< "  Middle wheel board: CH4/CH5/CH6/CH7 -> IN1/IN2/IN3/IN4\n"
+		<< "  Each DRV8833 board must have EEP/nSLEEP tied high\n";
 }
 
-void RunForward(MotorDriver& driver, const float speed)
+bool Coast(Pca9685Driver& pca, const WheelBoardChannels& channels)
 {
-	driver.setNormalizedSpeed(speed, speed);
+	return pca.disableChannel(static_cast<std::uint8_t>(channels.left_in1)) &&
+		   pca.disableChannel(static_cast<std::uint8_t>(channels.left_in2)) &&
+		   pca.disableChannel(static_cast<std::uint8_t>(channels.right_in3)) &&
+		   pca.disableChannel(static_cast<std::uint8_t>(channels.right_in4));
 }
 
-void RunReverse(MotorDriver& driver, const float speed)
+bool ApplySpeed(Pca9685Driver& pca,
+				const float speed,
+				const unsigned int in1_channel,
+				const unsigned int in2_channel)
 {
-	driver.setNormalizedSpeed(-speed, -speed);
+	if (speed > 0.0F)
+	{
+		return pca.setDutyCycle(static_cast<std::uint8_t>(in1_channel), speed) &&
+			   pca.disableChannel(static_cast<std::uint8_t>(in2_channel));
+	}
+
+	if (speed < 0.0F)
+	{
+		return pca.disableChannel(static_cast<std::uint8_t>(in1_channel)) &&
+			   pca.setDutyCycle(static_cast<std::uint8_t>(in2_channel), -speed);
+	}
+
+	return pca.disableChannel(static_cast<std::uint8_t>(in1_channel)) &&
+		   pca.disableChannel(static_cast<std::uint8_t>(in2_channel));
 }
 
-void StopDriver(MotorDriver& driver)
+bool ApplyBoardCommand(Pca9685Driver& pca, const WheelBoardChannels& channels, const float speed)
 {
-	driver.stop();
+	return ApplySpeed(pca, speed, channels.left_in1, channels.left_in2) &&
+		   ApplySpeed(pca, speed, channels.right_in3, channels.right_in4);
 }
 }
 
@@ -97,103 +120,64 @@ int main(int argc, char* argv[])
 		return 1;
 	}
 
-	auto pwm_driver = std::make_shared<Pca9685Driver>();
+	auto pwm_driver = std::make_unique<Pca9685Driver>();
 	if (!pwm_driver->start())
 	{
-		std::cerr << "Failed to start PCA9685. Check I2C wiring, address 0x40, and power.\n";
+		std::cerr << "Failed to start PCA9685. Check I2C wiring, address 0x40, and OE tied low.\n";
 		return 1;
 	}
 
-	MotorDriver front_drive(
-		"front-test",
-		pwm_driver,
-		RobotConfig::PWM_Channels::FRONT_Wheel_L,
-		RobotConfig::PWM_Channels::FRONT_Wheel_R,
-		RobotConfig::GPIO::FRONT_L_IN1,
-		RobotConfig::GPIO::FRONT_L_IN2,
-		RobotConfig::GPIO::FRONT_R_IN1,
-		RobotConfig::GPIO::FRONT_R_IN2);
+	const WheelBoardChannels front_channels{
+		RobotConfig::PWM_Channels::FRONT_L_IN1,
+		RobotConfig::PWM_Channels::FRONT_L_IN2,
+		RobotConfig::PWM_Channels::FRONT_R_IN3,
+		RobotConfig::PWM_Channels::FRONT_R_IN4};
+	const WheelBoardChannels middle_channels{
+		RobotConfig::PWM_Channels::MIDDLE_L_IN1,
+		RobotConfig::PWM_Channels::MIDDLE_L_IN2,
+		RobotConfig::PWM_Channels::MIDDLE_R_IN3,
+		RobotConfig::PWM_Channels::MIDDLE_R_IN4};
 
-	MotorDriver middle_drive(
-		"middle-test",
-		pwm_driver,
-		RobotConfig::PWM_Channels::MIDDLE_Wheel_L,
-		RobotConfig::PWM_Channels::MIDDLE_Wheel_R,
-		RobotConfig::GPIO::MID_L_IN1,
-		RobotConfig::GPIO::MID_L_IN2,
-		RobotConfig::GPIO::MID_R_IN1,
-		RobotConfig::GPIO::MID_R_IN2);
+	(void)Coast(*pwm_driver, front_channels);
+	(void)Coast(*pwm_driver, middle_channels);
 
-	if ((target == TestTarget::Front || target == TestTarget::Both) && !front_drive.start())
+	for (int cycle = 1; cycle <= cycles; ++cycle)
 	{
-		std::cerr << "Failed to start front TB6612 driver. Check GPIO17/18/27/22 and CH0/CH1.\n";
-		return 1;
-	}
-
-	if ((target == TestTarget::Middle || target == TestTarget::Both) && !middle_drive.start())
-	{
-		std::cerr << "Failed to start middle TB6612 driver. Check GPIO23/24/25/8 and CH2/CH3.\n";
-		return 1;
-	}
-
-	auto run_target = [&](MotorDriver& driver, const std::string& name) {
-		for (int cycle = 1; cycle <= cycles; ++cycle)
+		std::cout << "[cycle " << cycle << "] forward\n";
+		if (target == TestTarget::Front || target == TestTarget::Both)
 		{
-			std::cout << "[" << name << "] cycle " << cycle << " forward\n";
-			RunForward(driver, speed);
-			std::this_thread::sleep_for(std::chrono::milliseconds(forward_ms));
-
-			std::cout << "[" << name << "] cycle " << cycle << " stop\n";
-			StopDriver(driver);
-			std::this_thread::sleep_for(std::chrono::milliseconds(500));
-
-			std::cout << "[" << name << "] cycle " << cycle << " reverse\n";
-			RunReverse(driver, speed);
-			std::this_thread::sleep_for(std::chrono::milliseconds(reverse_ms));
-
-			std::cout << "[" << name << "] cycle " << cycle << " stop\n";
-			StopDriver(driver);
-			std::this_thread::sleep_for(std::chrono::milliseconds(500));
+			(void)ApplyBoardCommand(*pwm_driver, front_channels, speed);
 		}
-	};
-
-	switch (target)
-	{
-	case TestTarget::Front:
-		run_target(front_drive, "front");
-		break;
-	case TestTarget::Middle:
-		run_target(middle_drive, "middle");
-		break;
-	case TestTarget::Both:
-	default:
-		for (int cycle = 1; cycle <= cycles; ++cycle)
+		if (target == TestTarget::Middle || target == TestTarget::Both)
 		{
-			std::cout << "[both] cycle " << cycle << " forward\n";
-			RunForward(front_drive, speed);
-			RunForward(middle_drive, speed);
-			std::this_thread::sleep_for(std::chrono::milliseconds(forward_ms));
-
-			std::cout << "[both] cycle " << cycle << " stop\n";
-			StopDriver(front_drive);
-			StopDriver(middle_drive);
-			std::this_thread::sleep_for(std::chrono::milliseconds(500));
-
-			std::cout << "[both] cycle " << cycle << " reverse\n";
-			RunReverse(front_drive, speed);
-			RunReverse(middle_drive, speed);
-			std::this_thread::sleep_for(std::chrono::milliseconds(reverse_ms));
-
-			std::cout << "[both] cycle " << cycle << " stop\n";
-			StopDriver(front_drive);
-			StopDriver(middle_drive);
-			std::this_thread::sleep_for(std::chrono::milliseconds(500));
+			(void)ApplyBoardCommand(*pwm_driver, middle_channels, speed);
 		}
-		break;
+		std::this_thread::sleep_for(std::chrono::milliseconds(forward_ms));
+
+		std::cout << "[cycle " << cycle << "] stop\n";
+		(void)Coast(*pwm_driver, front_channels);
+		(void)Coast(*pwm_driver, middle_channels);
+		std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+		std::cout << "[cycle " << cycle << "] reverse\n";
+		if (target == TestTarget::Front || target == TestTarget::Both)
+		{
+			(void)ApplyBoardCommand(*pwm_driver, front_channels, -speed);
+		}
+		if (target == TestTarget::Middle || target == TestTarget::Both)
+		{
+			(void)ApplyBoardCommand(*pwm_driver, middle_channels, -speed);
+		}
+		std::this_thread::sleep_for(std::chrono::milliseconds(reverse_ms));
+
+		std::cout << "[cycle " << cycle << "] stop\n";
+		(void)Coast(*pwm_driver, front_channels);
+		(void)Coast(*pwm_driver, middle_channels);
+		std::this_thread::sleep_for(std::chrono::milliseconds(500));
 	}
 
-	front_drive.stop();
-	middle_drive.stop();
-	std::cout << "TB6612 + PCA9685 wheel test complete.\n";
+	(void)Coast(*pwm_driver, front_channels);
+	(void)Coast(*pwm_driver, middle_channels);
+	std::cout << "DRV8833 + PCA9685 wheel test complete.\n";
 	return 0;
 }

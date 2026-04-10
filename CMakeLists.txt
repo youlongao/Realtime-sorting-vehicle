@@ -20,6 +20,9 @@ set(CLIMBING_ROBOT_SOURCES
     "src/linear_actuator.cpp"
     "src/logger.cpp"
     "src/main.cpp"
+    "src/mcp23017_downward_sensor.cpp"
+    "src/mcp23017_driver.cpp"
+    "src/mcp23017_limit_switch.cpp"
     "src/middle_drive_module.cpp"
     "src/middle_lift_module.cpp"
     "src/motion_coordinator.cpp"
@@ -61,26 +64,55 @@ set_target_properties(DRV8833_Direct_Test PROPERTIES
 target_link_libraries(DRV8833_Direct_Test PRIVATE Threads::Threads "${GPIOD_LIBRARY}")
 target_include_directories(DRV8833_Direct_Test PRIVATE "${GPIOD_INCLUDE_DIR}")
 
-add_executable(TB6612_PCA_Test
+add_executable(DRV8833_PCA_Wheel_Test
     "tools/tb6612_pca_direct_test.cpp"
     "src/logger.cpp"
-    "src/motor_driver.cpp"
     "src/pca9685_driver.cpp"
     "src/utils.cpp")
-target_compile_features(TB6612_PCA_Test PRIVATE cxx_std_20)
-set_target_properties(TB6612_PCA_Test PROPERTIES
+target_compile_features(DRV8833_PCA_Wheel_Test PRIVATE cxx_std_20)
+set_target_properties(DRV8833_PCA_Wheel_Test PROPERTIES
     CXX_STANDARD 20
     CXX_STANDARD_REQUIRED ON
     CXX_EXTENSIONS OFF)
-target_include_directories(TB6612_PCA_Test PRIVATE
+target_include_directories(DRV8833_PCA_Wheel_Test PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
     "${GPIOD_INCLUDE_DIR}")
-target_link_libraries(TB6612_PCA_Test PRIVATE Threads::Threads "${GPIOD_LIBRARY}")
+target_link_libraries(DRV8833_PCA_Wheel_Test PRIVATE Threads::Threads "${GPIOD_LIBRARY}")
+
+add_executable(DRV8833_Lift_Test
+    "tools/drv8833_lift_test.cpp"
+)
+target_compile_features(DRV8833_Lift_Test PRIVATE cxx_std_20)
+set_target_properties(DRV8833_Lift_Test PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_include_directories(DRV8833_Lift_Test PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    "${GPIOD_INCLUDE_DIR}")
+target_link_libraries(DRV8833_Lift_Test PRIVATE Threads::Threads "${GPIOD_LIBRARY}")
+
+add_executable(DRV8833_PCA_Single_Motor_Test
+    "tools/drv8833_pca_single_motor_test.cpp"
+    "src/logger.cpp"
+    "src/pca9685_driver.cpp"
+    "src/utils.cpp")
+target_compile_features(DRV8833_PCA_Single_Motor_Test PRIVATE cxx_std_20)
+set_target_properties(DRV8833_PCA_Single_Motor_Test PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF)
+target_include_directories(DRV8833_PCA_Single_Motor_Test PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    "${GPIOD_INCLUDE_DIR}")
+target_link_libraries(DRV8833_PCA_Single_Motor_Test PRIVATE Threads::Threads "${GPIOD_LIBRARY}")
 
 if(CLIMBING_ROBOT_ENABLE_WARNINGS)
   target_compile_options(Climbing_Robot PRIVATE -Wall -Wextra -Wpedantic)
   target_compile_options(DRV8833_Direct_Test PRIVATE -Wall -Wextra -Wpedantic)
-  target_compile_options(TB6612_PCA_Test PRIVATE -Wall -Wextra -Wpedantic)
+  target_compile_options(DRV8833_PCA_Wheel_Test PRIVATE -Wall -Wextra -Wpedantic)
+  target_compile_options(DRV8833_Lift_Test PRIVATE -Wall -Wextra -Wpedantic)
+  target_compile_options(DRV8833_PCA_Single_Motor_Test PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" FILES ${CLIMBING_ROBOT_SOURCES})

@@ -21,11 +21,13 @@ namespace Robot
 namespace
 {
 constexpr std::uint8_t kMode1Register = 0x00;
+constexpr std::uint8_t kMode2Register = 0x01;
 constexpr std::uint8_t kLed0Register = 0x06;
 constexpr std::uint8_t kPrescaleRegister = 0xFE;
 constexpr std::uint8_t kAutoIncrement = 0x20;
 constexpr std::uint8_t kSleepBit = 0x10;
 constexpr std::uint8_t kRestartBit = 0x80;
+constexpr std::uint8_t kOutDrvBit = 0x04;
 }
 
 Pca9685Driver::Pca9685Driver(const unsigned int bus_id,
@@ -160,6 +162,13 @@ bool Pca9685Driver::configureFrequency()
 {
 	std::uint8_t current_mode = 0U;
 	if (!readRegister(kMode1Register, current_mode))
+	{
+		return false;
+	}
+
+	// Force MODE2 into totem-pole output mode so DRV8833 inputs see a
+	// strong logic high instead of the weaker default open-drain behavior.
+	if (!writeRegister(kMode2Register, kOutDrvBit))
 	{
 		return false;
 	}

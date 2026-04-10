@@ -1,22 +1,35 @@
 #include "linear_actuator.h"
 
 #include <cmath>
+#include <cstring>
 #include <utility>
 
 #include "logger.h"
 #include "utils.h"
 
+#include <cerrno>
+
+#include <gpiod.h>
+
 namespace Robot
 {
-LinearActuator::LinearActuator(std::shared_ptr<Pca9685Driver> pwm_driver,
-							   const unsigned int forward_pwm_channel,
-							   const unsigned int reverse_pwm_channel,
+namespace
+{
+std::string FormatErrno(const std::string& prefix)
+{
+	return prefix + ": " + std::strerror(errno);
+}
+}
+
+LinearActuator::LinearActuator(const unsigned int forward_gpio,
+							   const unsigned int reverse_gpio,
 							   ILimitSwitch* upper_limit,
 							   ILimitSwitch* lower_limit,
-							   const float max_travel_m)
-	: pwm_driver_(std::move(pwm_driver)),
-	  forward_pwm_channel_(forward_pwm_channel),
-	  reverse_pwm_channel_(reverse_pwm_channel),
+							   const float max_travel_m,
+							   std::string chip_path)
+	: chip_path_(std::move(chip_path)),
+	  forward_gpio_(forward_gpio),
+	  reverse_gpio_(reverse_gpio),
 	  upper_limit_(upper_limit),
 	  lower_limit_(lower_limit),
 	  max_travel_m_(max_travel_m)
@@ -25,9 +38,9 @@ LinearActuator::LinearActuator(std::shared_ptr<Pca9685Driver> pwm_driver,
 
 bool LinearActuator::start()
 {
-	if (!pwm_driver_ || !pwm_driver_->start())
+	if (request_ == nullptr && !requestLines())
 	{
-		Logger::error("Linear actuator failed to start PCA9685 PWM output.");
+		Logger::error("Linear actuator failed to request GPIO outputs.");
 		return false;
 	}
 
@@ -49,8 +62,8 @@ void LinearActuator::extend(float speed)
 		return;
 	}
 
-	pwm_driver_->setDutyCycle(static_cast<std::uint8_t>(forward_pwm_channel_), clamp(std::fabs(speed), 0.0F, 1.0F));
-	pwm_driver_->disableChannel(static_cast<std::uint8_t>(reverse_pwm_channel_));
+	(void)setLineValue(forward_gpio_, clamp(std::fabs(speed), 0.0F, 1.0F) > 0.0F);
+	(void)setLineValue(reverse_gpio_, false);
 
 	std::lock_guard<std::mutex> lock(mutex_);
 	axis_state_.in_motion = true;
@@ -71,8 +84,8 @@ void LinearActuator::retract(float speed)
 		return;
 	}
 
-	pwm_driver_->disableChannel(static_cast<std::uint8_t>(forward_pwm_channel_));
-	pwm_driver_->setDutyCycle(static_cast<std::uint8_t>(reverse_pwm_channel_), clamp(std::fabs(speed), 0.0F, 1.0F));
+	(void)setLineValue(forward_gpio_, false);
+	(void)setLineValue(reverse_gpio_, clamp(std::fabs(speed), 0.0F, 1.0F) > 0.0F);
 
 	std::lock_guard<std::mutex> lock(mutex_);
 	axis_state_.in_motion = true;
@@ -104,10 +117,10 @@ bool LinearActuator::moveToPosition(const float target_position_m)
 
 void LinearActuator::stop()
 {
-	if (pwm_driver_ != nullptr)
+	if (request_ != nullptr)
 	{
-		pwm_driver_->disableChannel(static_cast<std::uint8_t>(forward_pwm_channel_));
-		pwm_driver_->disableChannel(static_cast<std::uint8_t>(reverse_pwm_channel_));
+		(void)setLineValue(forward_gpio_, false);
+		(void)setLineValue(reverse_gpio_, false);
 	}
 
 	std::lock_guard<std::mutex> lock(mutex_);
@@ -149,6 +162,81 @@ AxisState LinearActuator::getAxisState() const
 
 	std::lock_guard<std::mutex> lock(mutex_);
 	return axis_state_;
+}
+
+bool LinearActuator::requestLines()
+{
+	chip_ = gpiod_chip_open(chip_path_.c_str());
+	if (chip_ == nullptr)
+	{
+		Logger::error(FormatErrno("Failed to open gpiochip for linear actuator"));
+		return false;
+	}
+
+	auto* settings = gpiod_line_settings_new();
+	auto* line_config = gpiod_line_config_new();
+	auto* request_config = gpiod_request_config_new();
+
+	if (settings == nullptr || line_config == nullptr || request_config == nullptr)
+	{
+		Logger::error("Failed to allocate libgpiod objects for linear actuator.");
+		gpiod_line_settings_free(settings);
+		gpiod_line_config_free(line_config);
+		gpiod_request_config_free(request_config);
+		releaseLines();
+		return false;
+	}
+
+	gpiod_line_settings_set_direction(settings, GPIOD_LINE_DIRECTION_OUTPUT);
+	gpiod_line_settings_set_drive(settings, GPIOD_LINE_DRIVE_PUSH_PULL);
+	gpiod_line_settings_set_output_value(settings, GPIOD_LINE_VALUE_INACTIVE);
+	gpiod_request_config_set_consumer(request_config, "linear-actuator");
+
+	const unsigned int offsets[2] = {forward_gpio_, reverse_gpio_};
+	gpiod_line_config_add_line_settings(line_config, offsets, 2, settings);
+	request_ = gpiod_chip_request_lines(chip_, request_config, line_config);
+
+	gpiod_line_settings_free(settings);
+	gpiod_line_config_free(line_config);
+	gpiod_request_config_free(request_config);
+
+	if (request_ == nullptr)
+	{
+		Logger::error(FormatErrno("Failed to request GPIO lines for linear actuator"));
+		releaseLines();
+		return false;
+	}
+
+	stop();
+	return true;
+}
+
+void LinearActuator::releaseLines()
+{
+	if (request_ != nullptr)
+	{
+		gpiod_line_request_release(request_);
+		request_ = nullptr;
+	}
+
+	if (chip_ != nullptr)
+	{
+		gpiod_chip_close(chip_);
+		chip_ = nullptr;
+	}
+}
+
+bool LinearActuator::setLineValue(const unsigned int gpio, const bool active)
+{
+	if (request_ == nullptr)
+	{
+		return false;
+	}
+
+	return gpiod_line_request_set_value(
+			   request_,
+			   gpio,
+			   active ? GPIOD_LINE_VALUE_ACTIVE : GPIOD_LINE_VALUE_INACTIVE) >= 0;
 }
 
 void LinearActuator::updateCachedState() const

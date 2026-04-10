@@ -22,41 +22,34 @@ std::string FormatErrno(const std::string& prefix)
 }
 
 MotorDriver::MotorDriver(std::string name,
-						 std::shared_ptr<Pca9685Driver> pwm_driver,
-						 const unsigned int left_pwm_channel,
-						 const unsigned int right_pwm_channel,
-						 const unsigned int left_in1,
-						 const unsigned int left_in2,
-						 const unsigned int right_in1,
-						 const unsigned int right_in2,
+						 const unsigned int left_in1_gpio,
+						 const unsigned int left_in2_gpio,
+						 const unsigned int right_in3_gpio,
+						 const unsigned int right_in4_gpio,
 						 std::string chip_path)
 	: name_(std::move(name)),
 	  chip_path_(std::move(chip_path)),
-	  pwm_driver_(std::move(pwm_driver)),
-	  left_pwm_channel_(left_pwm_channel),
-	  right_pwm_channel_(right_pwm_channel),
-	  left_in1_(left_in1),
-	  left_in2_(left_in2),
-	  right_in1_(right_in1),
-	  right_in2_(right_in2)
+	  left_in1_gpio_(left_in1_gpio),
+	  left_in2_gpio_(left_in2_gpio),
+	  right_in3_gpio_(right_in3_gpio),
+	  right_in4_gpio_(right_in4_gpio)
 {
 }
 
 MotorDriver::~MotorDriver()
 {
 	stop();
-	releaseGpio();
+	releaseLines();
 }
 
 bool MotorDriver::start()
 {
-	if (!pwm_driver_ || !pwm_driver_->start())
+	if (request_ != nullptr)
 	{
-		Logger::error(name_ + " motor driver failed to start PCA9685 PWM output.");
-		return false;
+		return true;
 	}
 
-	return initialiseGpio();
+	return requestLines();
 }
 
 void MotorDriver::setSpeed(const float left_speed, const float right_speed)
@@ -81,126 +74,88 @@ void MotorDriver::setNormalizedSpeed(const float left_speed, const float right_s
 		return;
 	}
 
-	applyMotorCommand(clamp(left_speed, -1.0F, 1.0F), left_pwm_channel_, left_in1_, left_in2_);
-	applyMotorCommand(clamp(right_speed, -1.0F, 1.0F), right_pwm_channel_, right_in1_, right_in2_);
+	(void)applyMotorCommand(clamp(left_speed, -1.0F, 1.0F), left_in1_gpio_, left_in2_gpio_);
+	(void)applyMotorCommand(clamp(right_speed, -1.0F, 1.0F), right_in3_gpio_, right_in4_gpio_);
 }
 
 void MotorDriver::stop()
 {
-	if (pwm_driver_)
+	if (request_ == nullptr)
 	{
-		pwm_driver_->disableChannel(static_cast<std::uint8_t>(left_pwm_channel_));
-		pwm_driver_->disableChannel(static_cast<std::uint8_t>(right_pwm_channel_));
+		return;
 	}
 
-	if (request_ != nullptr)
-	{
-		gpiod_line_request_set_value(request_, left_in1_, GPIOD_LINE_VALUE_INACTIVE);
-		gpiod_line_request_set_value(request_, left_in2_, GPIOD_LINE_VALUE_INACTIVE);
-		gpiod_line_request_set_value(request_, right_in1_, GPIOD_LINE_VALUE_INACTIVE);
-		gpiod_line_request_set_value(request_, right_in2_, GPIOD_LINE_VALUE_INACTIVE);
-	}
+	(void)setLineValue(left_in1_gpio_, false);
+	(void)setLineValue(left_in2_gpio_, false);
+	(void)setLineValue(right_in3_gpio_, false);
+	(void)setLineValue(right_in4_gpio_, false);
 }
 
 void MotorDriver::brake()
 {
-	if (request_ != nullptr)
+	if (!start())
 	{
-		gpiod_line_request_set_value(request_, left_in1_, GPIOD_LINE_VALUE_ACTIVE);
-		gpiod_line_request_set_value(request_, left_in2_, GPIOD_LINE_VALUE_ACTIVE);
-		gpiod_line_request_set_value(request_, right_in1_, GPIOD_LINE_VALUE_ACTIVE);
-		gpiod_line_request_set_value(request_, right_in2_, GPIOD_LINE_VALUE_ACTIVE);
+		return;
 	}
 
-	if (pwm_driver_)
-	{
-		pwm_driver_->disableChannel(static_cast<std::uint8_t>(left_pwm_channel_));
-		pwm_driver_->disableChannel(static_cast<std::uint8_t>(right_pwm_channel_));
-	}
+	(void)setLineValue(left_in1_gpio_, true);
+	(void)setLineValue(left_in2_gpio_, true);
+	(void)setLineValue(right_in3_gpio_, true);
+	(void)setLineValue(right_in4_gpio_, true);
 }
 
-bool MotorDriver::applyMotorCommand(const float speed,
-									const unsigned int pwm_channel,
-									const unsigned int in1_offset,
-									const unsigned int in2_offset)
+bool MotorDriver::requestLines()
 {
-	if (request_ == nullptr || !pwm_driver_)
-	{
-		return false;
-	}
-
-	if (speed > 0.0F)
-	{
-		gpiod_line_request_set_value(request_, in1_offset, GPIOD_LINE_VALUE_ACTIVE);
-		gpiod_line_request_set_value(request_, in2_offset, GPIOD_LINE_VALUE_INACTIVE);
-		return pwm_driver_->setDutyCycle(static_cast<std::uint8_t>(pwm_channel), std::fabs(speed));
-	}
-
-	if (speed < 0.0F)
-	{
-		gpiod_line_request_set_value(request_, in1_offset, GPIOD_LINE_VALUE_INACTIVE);
-		gpiod_line_request_set_value(request_, in2_offset, GPIOD_LINE_VALUE_ACTIVE);
-		return pwm_driver_->setDutyCycle(static_cast<std::uint8_t>(pwm_channel), std::fabs(speed));
-	}
-
-	gpiod_line_request_set_value(request_, in1_offset, GPIOD_LINE_VALUE_INACTIVE);
-	gpiod_line_request_set_value(request_, in2_offset, GPIOD_LINE_VALUE_INACTIVE);
-	return pwm_driver_->disableChannel(static_cast<std::uint8_t>(pwm_channel));
-}
-
-bool MotorDriver::initialiseGpio()
-{
-	if (request_ != nullptr)
-	{
-		return true;
-	}
-
 	chip_ = gpiod_chip_open(chip_path_.c_str());
 	if (chip_ == nullptr)
 	{
-		Logger::error(FormatErrno("Failed to open gpiochip for motor driver " + name_));
+		Logger::error(FormatErrno(name_ + " failed to open gpiochip for wheel driver"));
 		return false;
 	}
 
 	auto* settings = gpiod_line_settings_new();
-	auto* config = gpiod_line_config_new();
+	auto* line_config = gpiod_line_config_new();
 	auto* request_config = gpiod_request_config_new();
 
-	if (settings == nullptr || config == nullptr || request_config == nullptr)
+	if (settings == nullptr || line_config == nullptr || request_config == nullptr)
 	{
-		Logger::error("Failed to allocate libgpiod objects for motor driver " + name_);
+		Logger::error(name_ + " failed to allocate libgpiod output objects.");
 		gpiod_line_settings_free(settings);
-		gpiod_line_config_free(config);
+		gpiod_line_config_free(line_config);
 		gpiod_request_config_free(request_config);
-		releaseGpio();
+		releaseLines();
 		return false;
 	}
 
 	gpiod_line_settings_set_direction(settings, GPIOD_LINE_DIRECTION_OUTPUT);
-	gpiod_line_settings_set_output_value(settings, GPIOD_LINE_VALUE_INACTIVE);
 	gpiod_line_settings_set_drive(settings, GPIOD_LINE_DRIVE_PUSH_PULL);
-
-	const unsigned int offsets[4] = {left_in1_, left_in2_, right_in1_, right_in2_};
-	gpiod_line_config_add_line_settings(config, offsets, 4, settings);
+	gpiod_line_settings_set_output_value(settings, GPIOD_LINE_VALUE_INACTIVE);
 	gpiod_request_config_set_consumer(request_config, name_.c_str());
 
-	request_ = gpiod_chip_request_lines(chip_, request_config, config);
+	const unsigned int offsets[4] = {
+		left_in1_gpio_,
+		left_in2_gpio_,
+		right_in3_gpio_,
+		right_in4_gpio_};
+	gpiod_line_config_add_line_settings(line_config, offsets, 4, settings);
+	request_ = gpiod_chip_request_lines(chip_, request_config, line_config);
 
 	gpiod_line_settings_free(settings);
-	gpiod_line_config_free(config);
+	gpiod_line_config_free(line_config);
 	gpiod_request_config_free(request_config);
 
 	if (request_ == nullptr)
 	{
-		Logger::error(FormatErrno("Failed to request direction GPIOs for motor driver " + name_));
-		releaseGpio();
+		Logger::error(FormatErrno(name_ + " failed to request wheel driver GPIO lines"));
+		releaseLines();
 		return false;
 	}
 
+	stop();
 	return true;
 }
 
-void MotorDriver::releaseGpio()
+void MotorDriver::releaseLines()
 {
 	if (request_ != nullptr)
 	{
@@ -213,5 +168,40 @@ void MotorDriver::releaseGpio()
 		gpiod_chip_close(chip_);
 		chip_ = nullptr;
 	}
+}
+
+bool MotorDriver::setLineValue(const unsigned int gpio, const bool active)
+{
+	if (request_ == nullptr)
+	{
+		return false;
+	}
+
+	return gpiod_line_request_set_value(
+			   request_,
+			   gpio,
+			   active ? GPIOD_LINE_VALUE_ACTIVE : GPIOD_LINE_VALUE_INACTIVE) >= 0;
+}
+
+bool MotorDriver::applyMotorCommand(const float speed,
+									const unsigned int in1_gpio,
+									const unsigned int in2_gpio)
+{
+	if (request_ == nullptr)
+	{
+		return false;
+	}
+
+	if (speed > 0.0F)
+	{
+		return setLineValue(in1_gpio, true) && setLineValue(in2_gpio, false);
+	}
+
+	if (speed < 0.0F)
+	{
+		return setLineValue(in1_gpio, false) && setLineValue(in2_gpio, true);
+	}
+
+	return setLineValue(in1_gpio, false) && setLineValue(in2_gpio, false);
 }
 }

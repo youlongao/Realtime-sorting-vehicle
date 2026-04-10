@@ -8,18 +8,18 @@
 #include <utility>
 
 #include "climbing_fsm.h"
-#include "downward_sensor.h"
 #include "front_distance_sensor.h"
 #include "front_segment.h"
 #include "imu_sensor.h"
-#include "limit_switch.h"
 #include "linear_actuator.h"
 #include "logger.h"
+#include "mcp23017_downward_sensor.h"
+#include "mcp23017_driver.h"
+#include "mcp23017_limit_switch.h"
 #include "middle_drive_module.h"
 #include "middle_lift_module.h"
 #include "motion_coordinator.h"
 #include "motor_driver.h"
-#include "pca9685_driver.h"
 #include "pose_monitor.h"
 #include "rear_support_module.h"
 #include "robot_controller.h"
@@ -264,7 +264,7 @@ int RunHardwareBringup()
 {
 	Logger::info("Raspberry Pi Linux hardware mode starting.");
 
-	auto pwm_driver = std::make_shared<Pca9685Driver>();
+	auto mcp23017 = std::make_shared<Mcp23017Driver>();
 	const auto warnIfStartFailed = [](const std::string& device_name,
 									  const bool started,
 									  const std::string& hint) {
@@ -274,34 +274,33 @@ int RunHardwareBringup()
 		}
 	};
 
+	warnIfStartFailed(
+		"MCP23017 expander",
+		mcp23017->start(),
+		"Check SDA/SCL/VCC/GND wiring, RESET tied high, and address 0x20.");
+
 	MotorDriver front_drive(
 		"front",
-		pwm_driver,
-		RobotConfig::PWM_Channels::FRONT_Wheel_L,
-		RobotConfig::PWM_Channels::FRONT_Wheel_R,
-		RobotConfig::GPIO::FRONT_L_IN1,
-		RobotConfig::GPIO::FRONT_L_IN2,
-		RobotConfig::GPIO::FRONT_R_IN1,
-		RobotConfig::GPIO::FRONT_R_IN2);
+		RobotConfig::MotorGPIO::FRONT_L_IN1,
+		RobotConfig::MotorGPIO::FRONT_L_IN2,
+		RobotConfig::MotorGPIO::FRONT_R_IN3,
+		RobotConfig::MotorGPIO::FRONT_R_IN4);
 
 	MotorDriver middle_drive(
 		"middle",
-		pwm_driver,
-		RobotConfig::PWM_Channels::MIDDLE_Wheel_L,
-		RobotConfig::PWM_Channels::MIDDLE_Wheel_R,
-		RobotConfig::GPIO::MID_L_IN1,
-		RobotConfig::GPIO::MID_L_IN2,
-		RobotConfig::GPIO::MID_R_IN1,
-		RobotConfig::GPIO::MID_R_IN2);
+		RobotConfig::MotorGPIO::MIDDLE_L_IN1,
+		RobotConfig::MotorGPIO::MIDDLE_L_IN2,
+		RobotConfig::MotorGPIO::MIDDLE_R_IN3,
+		RobotConfig::MotorGPIO::MIDDLE_R_IN4);
 
 	warnIfStartFailed(
 		"Front drive",
 		front_drive.start(),
-		"Check libgpiod access, PCA9685 wiring, and motor GPIO polarity.");
+		"Check front DRV8833 GPIO wiring: BCM17/18/27/22 -> IN1/IN2/IN3/IN4, and ensure EEP/nSLEEP is high.");
 	warnIfStartFailed(
 		"Middle drive",
 		middle_drive.start(),
-		"Check the MID_* GPIOs and MIDDLE_Wheel_* PWM channels.");
+		"Check middle DRV8833 GPIO wiring: BCM23/24/25/8 -> IN1/IN2/IN3/IN4, and ensure EEP/nSLEEP is high.");
 
 	FrontDistanceSensor front_sensor;
 	const bool front_sensor_started = front_sensor.start();
@@ -314,90 +313,93 @@ int RunHardwareBringup()
 		Logger::warn("Front ultrasonic sensor did not produce a valid sample during startup.");
 	}
 
-	DownwardSensor front_downward_sensor;
-	DownwardSensor middle_support_sensor(
-		RobotConfig::Platform::GPIO_CHIP,
-		RobotConfig::GPIO::MIDDLE_SUPPORT_DETECTOR,
+	Mcp23017DownwardSensor front_downward_sensor(
+		mcp23017,
+		RobotConfig::MCP23017::FRONT_DOWNWARD_DO,
 		RobotConfig::Sensors::DOWNWARD_ACTIVE_ON_SURFACE);
-	DownwardSensor rear_support_sensor(
-		RobotConfig::Platform::GPIO_CHIP,
-		RobotConfig::GPIO::REAR_SUPPORT_DETECTOR,
+	Mcp23017DownwardSensor middle_support_sensor(
+		mcp23017,
+		RobotConfig::MCP23017::MIDDLE_SUPPORT_DO,
 		RobotConfig::Sensors::DOWNWARD_ACTIVE_ON_SURFACE);
-	warnIfStartFailed("Front downward edge sensor", front_downward_sensor.start(), "Check GPIO 12 wiring.");
-	warnIfStartFailed("Middle support sensor", middle_support_sensor.start(), "Check GPIO 4 wiring.");
-	warnIfStartFailed("Rear support sensor", rear_support_sensor.start(), "Check GPIO 7 wiring.");
+	Mcp23017DownwardSensor rear_support_sensor(
+		mcp23017,
+		RobotConfig::MCP23017::REAR_SUPPORT_DO,
+		RobotConfig::Sensors::DOWNWARD_ACTIVE_ON_SURFACE);
+	warnIfStartFailed("Front downward edge sensor", front_downward_sensor.start(), "Check MCP23017 GPA0 wiring and TCRT5000 DO output.");
+	warnIfStartFailed("Middle support sensor", middle_support_sensor.start(), "Check MCP23017 GPA1 wiring and TCRT5000 DO output.");
+	warnIfStartFailed("Rear support sensor", rear_support_sensor.start(), "Check MCP23017 GPA2 wiring and TCRT5000 DO output.");
 
-	LimitSwitch lift1_upper_limit(
-		RobotConfig::GPIO::LIFT_1_UPPER_LIMIT,
+	Mcp23017LimitSwitch lift1_upper_limit(
+		mcp23017,
+		RobotConfig::MCP23017::LIFT_1_UPPER_LIMIT,
 		LimitRole::Upper,
 		RobotConfig::Limits::ACTIVE_LOW);
-	LimitSwitch lift1_lower_limit(
-		RobotConfig::GPIO::LIFT_1_LOWER_LIMIT,
+	Mcp23017LimitSwitch lift1_lower_limit(
+		mcp23017,
+		RobotConfig::MCP23017::LIFT_1_LOWER_LIMIT,
 		LimitRole::Lower,
 		RobotConfig::Limits::ACTIVE_LOW);
-	LimitSwitch slide1_upper_limit(
-		RobotConfig::GPIO::SLIDE_1_UPPER_LIMIT,
+	Mcp23017LimitSwitch slide1_upper_limit(
+		mcp23017,
+		RobotConfig::MCP23017::SLIDE_1_UPPER_LIMIT,
 		LimitRole::Upper,
 		RobotConfig::Limits::ACTIVE_LOW);
-	LimitSwitch slide1_lower_limit(
-		RobotConfig::GPIO::SLIDE_1_LOWER_LIMIT,
+	Mcp23017LimitSwitch slide1_lower_limit(
+		mcp23017,
+		RobotConfig::MCP23017::SLIDE_1_LOWER_LIMIT,
 		LimitRole::Lower,
 		RobotConfig::Limits::ACTIVE_LOW);
-	LimitSwitch slide2_upper_limit(
-		RobotConfig::GPIO::SLIDE_2_UPPER_LIMIT,
+	Mcp23017LimitSwitch slide2_upper_limit(
+		mcp23017,
+		RobotConfig::MCP23017::SLIDE_2_UPPER_LIMIT,
 		LimitRole::Upper,
 		RobotConfig::Limits::ACTIVE_LOW);
-	LimitSwitch slide2_lower_limit(
-		RobotConfig::GPIO::SLIDE_2_LOWER_LIMIT,
+	Mcp23017LimitSwitch slide2_lower_limit(
+		mcp23017,
+		RobotConfig::MCP23017::SLIDE_2_LOWER_LIMIT,
 		LimitRole::Lower,
 		RobotConfig::Limits::ACTIVE_LOW);
-	LimitSwitch lift2_upper_limit(
-		RobotConfig::GPIO::LIFT_2_UPPER_LIMIT,
+	Mcp23017LimitSwitch lift2_upper_limit(
+		mcp23017,
+		RobotConfig::MCP23017::LIFT_2_UPPER_LIMIT,
 		LimitRole::Upper,
 		RobotConfig::Limits::ACTIVE_LOW);
-	LimitSwitch lift2_lower_limit(
-		RobotConfig::GPIO::LIFT_2_LOWER_LIMIT,
+	Mcp23017LimitSwitch lift2_lower_limit(
+		mcp23017,
+		RobotConfig::MCP23017::LIFT_2_LOWER_LIMIT,
 		LimitRole::Lower,
 		RobotConfig::Limits::ACTIVE_LOW);
 
-	warnIfStartFailed("Lift-1 upper limit", lift1_upper_limit.start(), "Check GPIO 10 wiring.");
-	warnIfStartFailed("Lift-1 lower limit", lift1_lower_limit.start(), "Check GPIO 11 wiring.");
-	warnIfStartFailed("Slide-1 upper limit", slide1_upper_limit.start(), "Check GPIO 13 wiring.");
-	warnIfStartFailed("Slide-1 lower limit", slide1_lower_limit.start(), "Check GPIO 16 wiring.");
-	warnIfStartFailed("Slide-2 upper limit", slide2_upper_limit.start(), "Check GPIO 19 wiring.");
-	warnIfStartFailed("Slide-2 lower limit", slide2_lower_limit.start(), "Check GPIO 20 wiring.");
-	warnIfStartFailed("Lift-2 upper limit", lift2_upper_limit.start(), "Check GPIO 21 wiring.");
-	warnIfStartFailed("Lift-2 lower limit", lift2_lower_limit.start(), "Check GPIO 26 wiring.");
+	warnIfStartFailed("Lift-1 upper limit", lift1_upper_limit.start(), "Check MCP23017 GPA3 and active-low limit wiring.");
+	warnIfStartFailed("Lift-1 lower limit", lift1_lower_limit.start(), "Check MCP23017 GPA4 and active-low limit wiring.");
+	warnIfStartFailed("Slide-1 upper limit", slide1_upper_limit.start(), "Check MCP23017 GPA5 and active-low limit wiring.");
+	warnIfStartFailed("Slide-1 lower limit", slide1_lower_limit.start(), "Check MCP23017 GPA6 and active-low limit wiring.");
+	warnIfStartFailed("Slide-2 upper limit", slide2_upper_limit.start(), "Check MCP23017 GPA7 and active-low limit wiring.");
+	warnIfStartFailed("Slide-2 lower limit", slide2_lower_limit.start(), "Check MCP23017 GPB0 and active-low limit wiring.");
+	warnIfStartFailed("Lift-2 upper limit", lift2_upper_limit.start(), "Check MCP23017 GPB1 and active-low limit wiring.");
+	warnIfStartFailed("Lift-2 lower limit", lift2_lower_limit.start(), "Check MCP23017 GPB2 and active-low limit wiring.");
 
 	LinearActuator first_lift_axis(
-		pwm_driver,
-		RobotConfig::PWM_Channels::LIFT_1_IN1_IN3,
-		RobotConfig::PWM_Channels::LIFT_1_IN2_IN4,
-		nullptr,
+		RobotConfig::MotorGPIO::LIFT_1_IN1_IN3,
+		RobotConfig::MotorGPIO::LIFT_1_IN2_IN4,
 		&lift1_upper_limit,
 		&lift1_lower_limit,
 		RobotConfig::Geometry::BODY_LIFT_MAX_TRAVEL_M);
 	LinearActuator front_slider_axis(
-		pwm_driver,
-		RobotConfig::PWM_Channels::SLIDE_1_IN1_IN3,
-		RobotConfig::PWM_Channels::SLIDE_1_IN2_IN4,
-		nullptr,
+		RobotConfig::MotorGPIO::SLIDE_1_IN1_IN3,
+		RobotConfig::MotorGPIO::SLIDE_1_IN2_IN4,
 		&slide1_upper_limit,
 		&slide1_lower_limit,
 		RobotConfig::Geometry::SLIDER_MAX_TRAVEL_M);
 	LinearActuator rear_slide_axis(
-		pwm_driver,
-		RobotConfig::PWM_Channels::SLIDE_2_IN1_IN3,
-		RobotConfig::PWM_Channels::SLIDE_2_IN2_IN4,
-		nullptr,
+		RobotConfig::MotorGPIO::SLIDE_2_IN1_IN3,
+		RobotConfig::MotorGPIO::SLIDE_2_IN2_IN4,
 		&slide2_upper_limit,
 		&slide2_lower_limit,
 		RobotConfig::Geometry::SLIDER_MAX_TRAVEL_M);
 	LinearActuator rear_lift_axis(
-		pwm_driver,
-		RobotConfig::PWM_Channels::LIFT_2_IN1_IN3,
-		RobotConfig::PWM_Channels::LIFT_2_IN2_IN4,
-		nullptr,
+		RobotConfig::MotorGPIO::LIFT_2_IN1_IN3,
+		RobotConfig::MotorGPIO::LIFT_2_IN2_IN4,
 		&lift2_upper_limit,
 		&lift2_lower_limit,
 		RobotConfig::Geometry::BODY_LIFT_MAX_TRAVEL_M);
@@ -405,19 +407,19 @@ int RunHardwareBringup()
 	warnIfStartFailed(
 		"Lift-1 actuator",
 		first_lift_axis.start(),
-		"Check DRV8833 #1: CH4 -> IN1+IN3, CH5 -> IN2+IN4, with OUT1+OUT3 and OUT2+OUT4 paralleled.");
+		"Check DRV8833 #1 direct GPIO wiring: BCM10 -> IN1+IN3 and BCM9 -> IN2+IN4.");
 	warnIfStartFailed(
 		"Slide-1 actuator",
 		front_slider_axis.start(),
-		"Check DRV8833 #3: CH8 -> IN1+IN3, CH9 -> IN2+IN4, with OUT1+OUT3 and OUT2+OUT4 paralleled.");
+		"Check DRV8833 #3 direct GPIO wiring: BCM5 -> IN1+IN3 and BCM6 -> IN2+IN4.");
 	warnIfStartFailed(
 		"Slide-2 actuator",
 		rear_slide_axis.start(),
-		"Check DRV8833 #4: CH10 -> IN1+IN3, CH11 -> IN2+IN4, with OUT1+OUT3 and OUT2+OUT4 paralleled.");
+		"Check DRV8833 #4 direct GPIO wiring: BCM12 -> IN1+IN3 and BCM13 -> IN2+IN4.");
 	warnIfStartFailed(
 		"Lift-2 actuator",
 		rear_lift_axis.start(),
-		"Check DRV8833 #2: CH6 -> IN1+IN3, CH7 -> IN2+IN4, with OUT1+OUT3 and OUT2+OUT4 paralleled.");
+		"Check DRV8833 #2 direct GPIO wiring: BCM11 -> IN1+IN3 and BCM7 -> IN2+IN4.");
 
 	std::unique_ptr<IImuSensor> imu_sensor;
 	auto hardware_imu = std::make_unique<ImuSensor>();
