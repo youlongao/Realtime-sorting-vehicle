@@ -46,7 +46,9 @@ MotionState ClimbingFsm::updateState(const SafetyStatus& safety_status,
 		{
 			return MotionState::Completed;
 		}
-		return MotionState::ApproachingStep;
+		return MotionState::CycleReset;
+	case MotionState::CycleReset:
+		return state_complete ? MotionState::ApproachingStep : MotionState::CycleReset;
 	case MotionState::Completed:
 		return MotionState::Completed;
 	case MotionState::Fault:

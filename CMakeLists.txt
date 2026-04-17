@@ -15,7 +15,6 @@ set(CLIMBING_ROBOT_SOURCES
     "src/downward_sensor.cpp"
     "src/front_distance_sensor.cpp"
     "src/front_segment.cpp"
-    "src/imu_sensor.cpp"
     "src/limit_switch.cpp"
     "src/linear_actuator.cpp"
     "src/logger.cpp"
@@ -27,13 +26,9 @@ set(CLIMBING_ROBOT_SOURCES
     "src/middle_lift_module.cpp"
     "src/motion_coordinator.cpp"
     "src/motor_driver.cpp"
-    "src/pca9685_driver.cpp"
-    "src/pose_monitor.cpp"
     "src/rear_support_module.cpp"
     "src/robot_controller.cpp"
     "src/safety_manager.cpp"
-    "src/front_balance_slider.cpp"
-    "src/servo_driver.cpp"
     "src/step_detector.cpp"
     "src/utils.cpp")
 
@@ -117,36 +112,6 @@ target_include_directories(DRV8833_Direct_Rear_Slide_Test PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
     "${GPIOD_INCLUDE_DIR}")
 target_link_libraries(DRV8833_Direct_Rear_Slide_Test PRIVATE Threads::Threads "${GPIOD_LIBRARY}")
-
-add_executable(DRV8833_PCA_Single_Motor_Test
-    "tools/drv8833_pca_single_motor_test.cpp"
-    "src/logger.cpp"
-    "src/pca9685_driver.cpp"
-    "src/utils.cpp")
-target_compile_features(DRV8833_PCA_Single_Motor_Test PRIVATE cxx_std_20)
-set_target_properties(DRV8833_PCA_Single_Motor_Test PROPERTIES
-    CXX_STANDARD 20
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF)
-target_include_directories(DRV8833_PCA_Single_Motor_Test PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}/include"
-    "${GPIOD_INCLUDE_DIR}")
-target_link_libraries(DRV8833_PCA_Single_Motor_Test PRIVATE Threads::Threads "${GPIOD_LIBRARY}")
-
-add_executable(DRV8833_PCA_Lift_Test
-    "tools/drv8833_pca_lift_test.cpp"
-    "src/logger.cpp"
-    "src/pca9685_driver.cpp"
-    "src/utils.cpp")
-target_compile_features(DRV8833_PCA_Lift_Test PRIVATE cxx_std_20)
-set_target_properties(DRV8833_PCA_Lift_Test PROPERTIES
-    CXX_STANDARD 20
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF)
-target_include_directories(DRV8833_PCA_Lift_Test PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}/include"
-    "${GPIOD_INCLUDE_DIR}")
-target_link_libraries(DRV8833_PCA_Lift_Test PRIVATE Threads::Threads "${GPIOD_LIBRARY}")
 
 add_executable(Front_IR_MCP23017_Test
     "tools/front_ir_mcp23017_test.cpp"
@@ -241,8 +206,6 @@ if(CLIMBING_ROBOT_ENABLE_WARNINGS)
   target_compile_options(DRV8833_Direct_Lift_Test PRIVATE -Wall -Wextra -Wpedantic)
   target_compile_options(DRV8833_Direct_Lift_Keyboard_Test PRIVATE -Wall -Wextra -Wpedantic)
   target_compile_options(DRV8833_Direct_Rear_Slide_Test PRIVATE -Wall -Wextra -Wpedantic)
-  target_compile_options(DRV8833_PCA_Single_Motor_Test PRIVATE -Wall -Wextra -Wpedantic)
-  target_compile_options(DRV8833_PCA_Lift_Test PRIVATE -Wall -Wextra -Wpedantic)
   target_compile_options(Front_IR_MCP23017_Test PRIVATE -Wall -Wextra -Wpedantic)
   target_compile_options(IR_MCP23017_All_Test PRIVATE -Wall -Wextra -Wpedantic)
   target_compile_options(IR_Direct_All_Test PRIVATE -Wall -Wextra -Wpedantic)

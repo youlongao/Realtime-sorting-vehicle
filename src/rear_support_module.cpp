@@ -137,6 +137,7 @@ bool RearSupportModule::lowerRearUntilLowerLimit()
 		return true;
 	}
 
+	logRearLiftLowerStatus(axis_state);
 	rear_lift_axis_->moveNormalized(RobotConfig::Motion::BODY_LOWER_SPEED);
 	return false;
 }
@@ -158,6 +159,23 @@ void RearSupportModule::logRearSlideBackStatus(const AxisState& axis_state)
 	last_rear_slide_back_log_time_ = now;
 	Logger::info(
 		std::string("RearSliderBack waiting: lower_limit=") +
+		(axis_state.at_lower_limit ? "1" : "0") +
+		", upper_limit=" +
+		(axis_state.at_upper_limit ? "1" : "0"));
+}
+
+void RearSupportModule::logRearLiftLowerStatus(const AxisState& axis_state)
+{
+	const auto now = SteadyClock::now();
+	if (last_rear_lift_lower_log_time_ != Timestamp{} &&
+		now - last_rear_lift_lower_log_time_ < std::chrono::seconds(1))
+	{
+		return;
+	}
+
+	last_rear_lift_lower_log_time_ = now;
+	Logger::info(
+		std::string("MiddleClimb rear lift lowering: lower_limit=") +
 		(axis_state.at_lower_limit ? "1" : "0") +
 		", upper_limit=" +
 		(axis_state.at_upper_limit ? "1" : "0"));

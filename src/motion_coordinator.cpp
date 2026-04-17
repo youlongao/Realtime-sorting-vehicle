@@ -77,7 +77,28 @@ bool MotionCoordinator::executeState(const MotionState current_state)
 		break;
 
 	case MotionState::MiddleDriveToFrontLanding:
-		if (front_landing_extra_lift_active_)
+		if (front_landing_extra_drive_active_)
+		{
+			const auto extra_drive_elapsed = SteadyClock::now() - front_landing_extra_drive_start_time_;
+			if (extra_drive_elapsed >=
+				std::chrono::milliseconds(RobotConfig::Motion::FRONT_LANDING_EXTRA_DRIVE_MS))
+			{
+				stopFrontAndMiddle();
+				front_landing_extra_drive_active_ = false;
+				front_landing_extra_lift_active_ = true;
+				front_landing_extra_lift_start_time_ = SteadyClock::now();
+				Logger::info(
+					"Front landing extra drive complete; continuing front lift for " +
+					std::to_string(RobotConfig::Motion::FRONT_LANDING_EXTRA_LIFT_S) +
+					"s before middle climb.");
+				front_segment_.continueFrontLift();
+			}
+			else
+			{
+				driveFrontAndMiddle(RobotConfig::Motion::CREEP_SPEED);
+			}
+		}
+		else if (front_landing_extra_lift_active_)
 		{
 			front_segment_.brakeDrive();
 			stopApproachAssist();
@@ -94,26 +115,22 @@ bool MotionCoordinator::executeState(const MotionState current_state)
 		}
 		else if (front_segment_.isSurfaceConfirmed())
 		{
-			front_segment_.stopDrive();
-			stopApproachAssist();
-			front_landing_extra_lift_active_ = true;
-			front_landing_extra_lift_start_time_ = SteadyClock::now();
+			front_landing_extra_drive_active_ = true;
+			front_landing_extra_drive_start_time_ = SteadyClock::now();
 			Logger::info(
-				"Front landing confirmed; continuing front lift for " +
-				std::to_string(RobotConfig::Motion::FRONT_LANDING_EXTRA_LIFT_S) +
-				"s before middle climb.");
-			front_segment_.continueFrontLift();
+				"Front landing confirmed; driving front and middle wheels forward for " +
+				std::to_string(RobotConfig::Motion::FRONT_LANDING_EXTRA_DRIVE_MS) +
+				"ms.");
+			driveFrontAndMiddle(RobotConfig::Motion::CREEP_SPEED);
 		}
 		else if (checkSensorTimeout("MiddleDriveToFrontLanding"))
 		{
-			front_segment_.stopDrive();
-			stopApproachAssist();
+			stopFrontAndMiddle();
 			front_segment_.holdFrontLift();
 		}
 		else
 		{
-			front_segment_.driveForward(RobotConfig::Motion::CREEP_SPEED);
-			driveApproachAssist(RobotConfig::Motion::CREEP_SPEED);
+			driveFrontAndMiddle(RobotConfig::Motion::CREEP_SPEED);
 		}
 		break;
 
@@ -133,19 +150,39 @@ bool MotionCoordinator::executeState(const MotionState current_state)
 		break;
 
 	case MotionState::FrontDriveToMiddleLanding:
-		stopApproachAssist();
-		if (checkSensorTimeout("FrontDriveToMiddleLanding"))
+		if (middle_landing_extra_drive_active_)
 		{
-			front_segment_.stopDrive();
+			const auto extra_drive_elapsed = SteadyClock::now() - middle_landing_extra_drive_start_time_;
+			if (extra_drive_elapsed >=
+				std::chrono::milliseconds(RobotConfig::Motion::MIDDLE_LANDING_EXTRA_DRIVE_MS))
+			{
+				stopFrontAndMiddle();
+				middle_landing_extra_drive_active_ = false;
+				state_complete_ = true;
+			}
+			else
+			{
+				driveFrontAndMiddle(RobotConfig::Motion::CREEP_SPEED);
+			}
 		}
-		else if (middle_drive_module_.isSupportConfirmed())
+		else if (checkSensorTimeout("FrontDriveToMiddleLanding"))
 		{
-			front_segment_.stopDrive();
-			state_complete_ = true;
+			stopFrontAndMiddle();
+		}
+		else if (front_segment_.isSurfaceConfirmed() && middle_drive_module_.isSupportConfirmed())
+		{
+			middle_landing_extra_drive_active_ = true;
+			middle_landing_extra_drive_start_time_ = SteadyClock::now();
+			Logger::info(
+				"Front and middle landing confirmed; driving front and middle wheels forward for " +
+				std::to_string(RobotConfig::Motion::MIDDLE_LANDING_EXTRA_DRIVE_MS) +
+				"ms.");
+			driveFrontAndMiddle(RobotConfig::Motion::CREEP_SPEED);
 		}
 		else
 		{
 			front_segment_.driveForward(RobotConfig::Motion::CREEP_SPEED);
+			stopApproachAssist();
 		}
 		break;
 
@@ -187,6 +224,15 @@ bool MotionCoordinator::executeState(const MotionState current_state)
 		}
 		break;
 
+	case MotionState::CycleReset:
+		front_segment_.brakeDrive();
+		middle_drive_module_.holdPosition();
+		if (!checkActuatorTimeout("CycleReset", RobotConfig::Motion::SLIDER_CONFIRM_TIMEOUT_S))
+		{
+			state_complete_ = rear_support_module_.moveSlideBackwardUntilLimit();
+		}
+		break;
+
 	case MotionState::Completed:
 	case MotionState::Fault:
 	default:
@@ -216,8 +262,12 @@ void MotionCoordinator::resetPhases()
 {
 	state_complete_ = false;
 	active_state_valid_ = false;
+	front_landing_extra_drive_active_ = false;
 	front_landing_extra_lift_active_ = false;
+	middle_landing_extra_drive_active_ = false;
+	front_landing_extra_drive_start_time_ = Timestamp{};
 	front_landing_extra_lift_start_time_ = Timestamp{};
+	middle_landing_extra_drive_start_time_ = Timestamp{};
 	state_timed_out_ = false;
 	state_timeout_message_.clear();
 	state_timeout_kind_ = TimeoutKind::Sensor;
@@ -229,8 +279,12 @@ void MotionCoordinator::enterState(const MotionState next_state)
 	active_state_valid_ = true;
 	state_complete_ = false;
 	state_entry_time_ = SteadyClock::now();
+	front_landing_extra_drive_active_ = false;
 	front_landing_extra_lift_active_ = false;
+	middle_landing_extra_drive_active_ = false;
+	front_landing_extra_drive_start_time_ = Timestamp{};
 	front_landing_extra_lift_start_time_ = Timestamp{};
+	middle_landing_extra_drive_start_time_ = Timestamp{};
 	state_timed_out_ = false;
 	state_timeout_message_.clear();
 	state_timeout_kind_ = TimeoutKind::Sensor;
@@ -306,6 +360,18 @@ void MotionCoordinator::driveApproachAssist(const float speed)
 	{
 		approach_assist_drive_->setNormalizedSpeed(speed, speed);
 	}
+}
+
+void MotionCoordinator::driveFrontAndMiddle(const float speed)
+{
+	front_segment_.driveForward(speed);
+	driveApproachAssist(speed);
+}
+
+void MotionCoordinator::stopFrontAndMiddle()
+{
+	front_segment_.stopDrive();
+	stopApproachAssist();
 }
 
 void MotionCoordinator::stopApproachAssist()

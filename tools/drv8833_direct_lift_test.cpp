@@ -73,7 +73,7 @@ void PrintUsage(const char* program_name)
 		<< "  forward_ms = 800\n"
 		<< "  reverse_ms = 800\n"
 		<< "  cycles     = 1\n\n"
-		<< "Direct GPIO wiring assumptions (no PCA9685 used):\n"
+		<< "Direct GPIO wiring assumptions:\n"
 		<< "  Lift-1 DRV8833 (paralleled):\n"
 		<< "    BCM10 -> IN1 + IN3\n"
 		<< "    BCM9  -> IN2 + IN4\n"

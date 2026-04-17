@@ -92,7 +92,7 @@ void PrintUsage(const char* program_name)
 		<< "Safety behavior:\n"
 		<< "  Each key press holds motion only for hold_ms, then the output automatically coasts.\n"
 		<< "  Hold the key or press repeatedly to keep moving.\n\n"
-		<< "Direct GPIO wiring assumptions (no PCA9685 used):\n"
+		<< "Direct GPIO wiring assumptions:\n"
 		<< "  Lift-1/front DRV8833 (paralleled): BCM10 -> IN1+IN3, BCM9 -> IN2+IN4\n"
 		<< "  Lift-2/rear DRV8833 (paralleled): BCM11 -> IN1+IN3, BCM7 -> IN2+IN4\n"
 		<< "  EEP/nSLEEP must be tied high only when you are ready to drive the motors.\n";

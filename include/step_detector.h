@@ -20,13 +20,11 @@ public:
 	middle_support_sensor: The mid-section downward-facing sensor is used to confirm 
 						   whether the mid-section drive wheels have landed on the new support surface
 	rear_support_sensor: The rear downward-facing sensor is used to confirm whether the rear support wheel has landed
-	pose_safe: A callback function to determine whether the current pose is safe
 	*/
 	StepDetector(IFrontDistanceSensor& front_distance_sensor,
 				 IDownwardSensor& front_downward_sensor,
 				 IDownwardSensor* middle_support_sensor = nullptr,
-				 IDownwardSensor* rear_support_sensor = nullptr,
-				 std::function<bool()> pose_safe = {});
+				 IDownwardSensor* rear_support_sensor = nullptr);
 	~StepDetector();
 
 	void setUpdateCallback(std::function<void()> callback);
@@ -45,7 +43,6 @@ private:
 	IDownwardSensor& front_downward_sensor_;	// Front-end downward view interface
 	IDownwardSensor* middle_support_sensor_;	// Mid-section support confirmation interface
 	IDownwardSensor* rear_support_sensor_;	// Backend support confirmation interface
-	std::function<bool()> pose_safe_;	// Attitude safety judgment callback
 	std::function<void()> update_callback_;	// Callback used to notify the controller that new sensor data is available
 
 	mutable std::mutex mutex_;	// Protect internal cached data and prevent multi-threaded access conflicts.

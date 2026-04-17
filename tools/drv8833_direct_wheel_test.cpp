@@ -45,7 +45,7 @@ void PrintUsage(const char* program_name)
 		<< "  forward_ms = 1500\n"
 		<< "  reverse_ms = 1500\n"
 		<< "  cycles     = 3\n\n"
-		<< "Direct GPIO wiring assumptions (no PCA9685 used):\n"
+		<< "Direct GPIO wiring assumptions:\n"
 		<< "  Front wheel DRV8833:\n"
 		<< "    GPIO " << RobotConfig::MotorGPIO::FRONT_L_IN1 << " -> left IN1\n"
 		<< "    GPIO " << RobotConfig::MotorGPIO::FRONT_L_IN2 << " -> left IN2\n"

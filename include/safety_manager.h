@@ -7,7 +7,6 @@
 #include <string>
 #include <vector>
 
-#include "pose_monitor.h"
 #include "types.h"
 
 namespace Robot
@@ -17,7 +16,7 @@ class SafetyManager
 public:
 	using SafetyRule = std::function<std::optional<SafetyStatus>()>;
 
-	explicit SafetyManager(PoseMonitor* pose_monitor = nullptr);
+	SafetyManager() = default;
 
 	void addRule(SafetyRule rule);
 	void addEmergencyStopHandler(std::function<void()> handler);
@@ -29,8 +28,6 @@ public:
 	SafetyStatus currentStatus() const;
 
 private:
-	PoseMonitor* pose_monitor_;
-
 	mutable std::mutex mutex_;
 	std::vector<SafetyRule> rules_;
 	std::vector<std::function<void()>> emergency_stop_handlers_;

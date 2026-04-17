@@ -1,18 +1,11 @@
 #include "safety_manager.h"
 
-#include <cmath>
 #include <utility>
 
-#include "config.h"
 #include "logger.h"
 
 namespace Robot
 {
-SafetyManager::SafetyManager(PoseMonitor* pose_monitor)
-	: pose_monitor_(pose_monitor)
-{
-}
-
 void SafetyManager::addRule(SafetyRule rule)
 {
 	std::lock_guard<std::mutex> lock(mutex_);
@@ -32,34 +25,6 @@ SafetyStatus SafetyManager::checkAllSafetyConditions()
 		if (current_status_.latched)
 		{
 			return current_status_;
-		}
-	}
-
-	if (pose_monitor_ != nullptr)
-	{
-		const auto pose = pose_monitor_->currentPose();
-		if (!pose.valid)
-		{
-			emergencyStop(FaultCode::ImuFault, "Pose monitor has no valid IMU sample.");
-			return currentStatus();
-		}
-
-		if (!pose_monitor_->isSafe())
-		{
-			if (std::fabs(pose.pitch_deg) > RobotConfig::Safety::MAX_SAFE_PITCH_DEG)
-			{
-				emergencyStop(FaultCode::OverPitch, "Robot pitch exceeded the safety threshold.");
-			}
-			else if (std::fabs(pose.roll_deg) > RobotConfig::Safety::MAX_SAFE_ROLL_DEG)
-			{
-				emergencyStop(FaultCode::OverRoll, "Robot roll exceeded the safety threshold.");
-			}
-			else
-			{
-				emergencyStop(FaultCode::ImuFault, "IMU data became stale.");
-			}
-
-			return currentStatus();
 		}
 	}
 

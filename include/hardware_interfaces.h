@@ -44,14 +44,6 @@ public:
 	virtual void setCallback(DownwardCallback callback) = 0;
 };
 
-class IImuSensor
-{
-public:
-	virtual ~IImuSensor() = default;
-	virtual PoseData latestPose() const = 0;
-	virtual void setCallback(PoseCallback callback) = 0;
-};
-
 class ILimitSwitch
 {
 public:

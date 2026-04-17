@@ -47,11 +47,13 @@ public:
 
 private:
 	void logRearSlideBackStatus(const AxisState& axis_state);
+	void logRearLiftLowerStatus(const AxisState& axis_state);
 
 	ILinearAxis* rear_slide_axis_;
 	ILinearAxis* rear_lift_axis_;
 	std::function<bool()> rear_support_confirmed_;
 	Timestamp last_rear_slide_back_log_time_{};
+	Timestamp last_rear_lift_lower_log_time_{};
 };
 }
 

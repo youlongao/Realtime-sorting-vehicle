@@ -42,6 +42,8 @@ private:
 	void enterState(MotionState next_state);
 	void driveApproachAssist(float speed);
 	void stopApproachAssist();
+	void driveFrontAndMiddle(float speed);
+	void stopFrontAndMiddle();
 	// Returns true (and sets state_timed_out_) when the downward sensor has
 	// not confirmed a landing within SENSOR_CONFIRM_TIMEOUT_S seconds.
 	bool checkSensorTimeout(const char* state_name);
@@ -59,10 +61,14 @@ private:
 	MotionState active_state_{MotionState::Idle};
 	bool active_state_valid_{false};
 	bool state_complete_{false};
+	bool front_landing_extra_drive_active_{false};
 	bool front_landing_extra_lift_active_{false};
+	bool middle_landing_extra_drive_active_{false};
 
 	Timestamp state_entry_time_{};
+	Timestamp front_landing_extra_drive_start_time_{};
 	Timestamp front_landing_extra_lift_start_time_{};
+	Timestamp middle_landing_extra_drive_start_time_{};
 	bool state_timed_out_{false};
 	std::string state_timeout_message_;
 	TimeoutKind state_timeout_kind_{TimeoutKind::Sensor};

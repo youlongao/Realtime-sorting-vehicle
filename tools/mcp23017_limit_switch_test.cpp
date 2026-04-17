@@ -21,8 +21,6 @@ struct LimitInput
 constexpr std::array<LimitInput, 8> kLimitInputs{{
 	{"lift1_upper", RobotConfig::MCP23017::LIFT_1_UPPER_LIMIT, "GPA3"},
 	{"lift1_lower", RobotConfig::MCP23017::LIFT_1_LOWER_LIMIT, "GPA4"},
-	{"slide1_upper", RobotConfig::MCP23017::SLIDE_1_UPPER_LIMIT, "GPA5"},
-	{"slide1_lower", RobotConfig::MCP23017::SLIDE_1_LOWER_LIMIT, "GPA6"},
 	{"slide2_upper", RobotConfig::MCP23017::SLIDE_2_UPPER_LIMIT, "GPA7"},
 	{"slide2_lower", RobotConfig::MCP23017::SLIDE_2_LOWER_LIMIT, "GPB0"},
 	{"lift2_upper", RobotConfig::MCP23017::LIFT_2_UPPER_LIMIT, "GPB1"},

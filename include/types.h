@@ -18,9 +18,6 @@ enum class FaultCode
 	EmergencyStop,
 	FrontDistanceTimeout,
 	DownwardSensorFault,
-	ImuFault,
-	OverPitch,
-	OverRoll,
 	LimitSwitchTriggered,
 	ActuatorFault,
 	LiftUpperLimit,
@@ -40,6 +37,7 @@ enum class MotionState
 	RearSliderForward,
 	RearLift,
 	FinalDriveToRearLanding,
+	CycleReset,
 	Completed,
 	Fault
 };
@@ -57,15 +55,6 @@ enum class EdgeConfidence
 	Low,
 	Medium,
 	High
-};
-
-struct PoseData
-{
-	float pitch_deg{0.0F};
-	float roll_deg{0.0F};
-	float yaw_deg{0.0F};
-	Timestamp timestamp{SteadyClock::now()};
-	bool valid{false};
 };
 
 struct DistanceReading
@@ -127,7 +116,6 @@ struct SafetyStatus
 
 struct SensorData
 {
-	PoseData pose{};
 	DistanceReading front_distance{};
 	DownwardReading downward{};
 	LimitSwitchState upper_limit{};
@@ -143,7 +131,6 @@ struct RobotState
 	Timestamp timestamp{SteadyClock::now()};
 };
 
-using PoseCallback = std::function<void(const PoseData&)>;
 using DistanceCallback = std::function<void(const DistanceReading&)>;
 using DownwardCallback = std::function<void(const DownwardReading&)>;
 using LimitSwitchCallback = std::function<void(const LimitSwitchState&)>;

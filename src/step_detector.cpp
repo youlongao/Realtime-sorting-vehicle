@@ -11,13 +11,11 @@ namespace Robot
 StepDetector::StepDetector(IFrontDistanceSensor& front_distance_sensor,
 						   IDownwardSensor& front_downward_sensor,
 						   IDownwardSensor* middle_support_sensor,
-						   IDownwardSensor* rear_support_sensor,
-						   std::function<bool()> pose_safe)
+						   IDownwardSensor* rear_support_sensor)
 	: front_distance_sensor_(front_distance_sensor),
 	  front_downward_sensor_(front_downward_sensor),
 	  middle_support_sensor_(middle_support_sensor),
-	  rear_support_sensor_(rear_support_sensor),
-	  pose_safe_(std::move(pose_safe))
+	  rear_support_sensor_(rear_support_sensor)
 {
 	// Initialize the most recent sensor cache to prevent the internal state
 	//  from being empty when the object is first created
@@ -171,10 +169,6 @@ StepAssessment StepDetector::buildAssessmentLocked() const
 		last_rear_downward_.valid &&
 		isFresh(last_rear_downward_.timestamp, std::chrono::milliseconds(RobotConfig::Sensors::DOWNWARD_SENSOR_STALE_MS));
 	
-	// Determine if the current posture is safe
-	// If no gesture determination callback is provided, the default is safe
-		const bool pose_safe = !pose_safe_ || pose_safe_();
-
 	// Determine if the forward distance is within the "step facade detection range"
 	const bool front_distance_in_band =
 		front_fresh &&
@@ -198,17 +192,16 @@ StepAssessment StepDetector::buildAssessmentLocked() const
 	
 	// Determine if you are ready to begin the initial climb
 	// It requires posture safety, sufficiently close forward distance, effective forward downward look, and edge detection
-	assessment.ready_for_climb = pose_safe &&
-								 front_fresh &&
+	assessment.ready_for_climb = front_fresh &&
 								 front_downward_fresh &&
 								 last_distance_.distance_m <= RobotConfig::Sensors::READY_TO_CLIMB_DISTANCE_M &&
 								 assessment.edge_detected;
 	
-	// Once the initial phase has landed and its attitude is safe, the mid-course transfer phase can begin
-	assessment.ready_for_middle_transfer = pose_safe && assessment.surface_detected;
+	// Once the initial phase has landed, the mid-course transfer phase can begin
+	assessment.ready_for_middle_transfer = assessment.surface_detected;
 	
-	// Once the mid-section has landed and its attitude is safe, the subsequent transfer phase can begin
-	assessment.ready_for_rear_transfer = pose_safe && assessment.middle_surface_detected;
+	// Once the mid-section has landed, the subsequent transfer phase can begin
+	assessment.ready_for_rear_transfer = assessment.middle_surface_detected;
 	
 	// When the rear support wheel has landed, the upper stage of this cycle is considered complete
 	assessment.step_completed = assessment.rear_surface_detected;

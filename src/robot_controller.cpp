@@ -33,6 +33,8 @@ const char* MotionStateToString(const MotionState state)
 		return "RearLift";
 	case MotionState::FinalDriveToRearLanding:
 		return "FinalDriveToRearLanding";
+	case MotionState::CycleReset:
+		return "CycleReset";
 	case MotionState::Completed:
 		return "Completed";
 	case MotionState::Fault:
@@ -45,12 +47,10 @@ const char* MotionStateToString(const MotionState state)
 RobotController::RobotController(ClimbingFsm& climbing_fsm,
 								 MotionCoordinator& motion_coordinator,
 								 StepDetector& step_detector,
-								 PoseMonitor& pose_monitor,
 								 SafetyManager& safety_manager)
 	: climbing_fsm_(climbing_fsm),
 	  motion_coordinator_(motion_coordinator),
 	  step_detector_(step_detector),
-	  pose_monitor_(pose_monitor),
 	  safety_manager_(safety_manager)
 {
 }
@@ -58,7 +58,6 @@ RobotController::RobotController(ClimbingFsm& climbing_fsm,
 RobotController::~RobotController()
 {
 	step_detector_.setUpdateCallback({});
-	pose_monitor_.setUpdateCallback({});
 }
 
 bool RobotController::init()
@@ -72,7 +71,6 @@ bool RobotController::init()
 		robot_state_.motion_state = climbing_fsm_.getCurrentState();
 		robot_state_.step_assessment = step_detector_.latestAssessment();
 		robot_state_.safety_status = safety_status;
-		robot_state_.sensor_data.pose = pose_monitor_.currentPose();
 		robot_state_.timestamp = SteadyClock::now();
 	}
 
@@ -106,7 +104,6 @@ void RobotController::update()
 
 	StepAssessment step_assessment;
 	SafetyStatus safety_status;
-	PoseData pose;
 	MotionState next_state = climbing_fsm_.getCurrentState();
 
 	for (int transition_guard = 0; transition_guard < 12; ++transition_guard)
@@ -114,7 +111,6 @@ void RobotController::update()
 		const auto current_state = climbing_fsm_.getCurrentState();
 		safety_status = safety_manager_.checkAllSafetyConditions();
 		step_assessment = step_detector_.detectStepEdge();
-		pose = pose_monitor_.currentPose();
 
 		if (current_state == MotionState::Completed || current_state == MotionState::Fault)
 		{
@@ -170,7 +166,6 @@ void RobotController::update()
 	snapshot.motion_state = climbing_fsm_.getCurrentState();
 	snapshot.step_assessment = step_assessment;
 	snapshot.safety_status = safety_status;
-	snapshot.sensor_data.pose = pose;
 	snapshot.sensor_data.front_distance.distance_m = step_assessment.front_face_distance_m;
 	snapshot.sensor_data.front_distance.valid = !std::isnan(step_assessment.front_face_distance_m);
 	snapshot.sensor_data.front_distance.timestamp = step_assessment.timestamp;
@@ -224,9 +219,6 @@ void RobotController::bindEventSources()
 	}
 
 	step_detector_.setUpdateCallback([this]() {
-		update();
-	});
-	pose_monitor_.setUpdateCallback([this](const PoseData&) {
 		update();
 	});
 	callbacks_bound_ = true;

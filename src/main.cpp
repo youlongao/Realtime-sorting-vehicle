@@ -19,7 +19,6 @@
 #include "downward_sensor.h"
 #include "front_distance_sensor.h"
 #include "front_segment.h"
-#include "imu_sensor.h"
 #include "linear_actuator.h"
 #include "logger.h"
 #include "mcp23017_driver.h"
@@ -28,27 +27,16 @@
 #include "middle_lift_module.h"
 #include "motion_coordinator.h"
 #include "motor_driver.h"
-#include "pose_monitor.h"
 #include "rear_support_module.h"
 #include "robot_controller.h"
 #include "safety_manager.h"
-#include "front_balance_slider.h"
 #include "step_detector.h"
 
 using namespace Robot;
 
 namespace
 {
-constexpr float kInitialFrontSliderExtensionM = RobotConfig::Geometry::SLIDER_HOME_OFFSET_M;
-constexpr auto kSliderHomeTimeout = std::chrono::seconds(2);
 constexpr auto kStartupResetTimeout = std::chrono::seconds(180);
-
-struct WaitForImuState
-{
-	std::mutex mutex;
-	std::condition_variable cv;
-	bool pose_ready{false};
-};
 
 struct WaitForDistanceState
 {
@@ -56,72 +44,6 @@ struct WaitForDistanceState
 	std::condition_variable cv;
 	bool sample_ready{false};
 };
-
-class FixedPoseImuSensor final : public IImuSensor
-{
-public:
-	FixedPoseImuSensor()
-	{
-		pose_.pitch_deg = 0.0F;
-		pose_.roll_deg = 0.0F;
-		pose_.yaw_deg = 0.0F;
-		pose_.timestamp = SteadyClock::now();
-		pose_.valid = true;
-	}
-
-	PoseData latestPose() const override
-	{
-		return pose_;
-	}
-
-	void setCallback(PoseCallback callback) override
-	{
-		callback_ = std::move(callback);
-		if (callback_)
-		{
-			callback_(pose_);
-		}
-	}
-
-private:
-	PoseData pose_{};
-	PoseCallback callback_;
-};
-
-bool WaitForValidImuSample(ImuSensor& imu_sensor, const std::chrono::milliseconds timeout)
-{
-	if (imu_sensor.latestPose().valid)
-	{
-		return true;
-	}
-
-	const auto wait_state = std::make_shared<WaitForImuState>();
-
-	imu_sensor.setCallback([wait_state](const PoseData& pose) {
-		if (!pose.valid)
-		{
-			return;
-		}
-
-		{
-			std::lock_guard<std::mutex> lock(wait_state->mutex);
-			wait_state->pose_ready = true;
-		}
-
-		wait_state->cv.notify_all();
-	});
-
-	std::unique_lock<std::mutex> lock(wait_state->mutex);
-	(void)wait_state->cv.wait_for(lock, timeout, [wait_state]() {
-		return wait_state->pose_ready;
-	});
-	lock.unlock();
-
-	// Clear the callback before returning so the sensor does not hold a
-	// reference to the startup wait state after bring-up has moved on.
-	imu_sensor.setCallback({});
-	return wait_state->pose_ready || imu_sensor.latestPose().valid;
-}
 
 bool WaitForValidFrontDistanceSample(FrontDistanceSensor& front_sensor, const std::chrono::milliseconds timeout)
 {
@@ -156,40 +78,6 @@ bool WaitForValidFrontDistanceSample(FrontDistanceSensor& front_sensor, const st
 	// reference to the startup wait state after bring-up has moved on.
 	front_sensor.setCallback({});
 	return wait_state->sample_ready || front_sensor.latest().valid;
-}
-
-bool HomeFrontSliderIfNeeded(FrontBalanceSlider& front_slider,
-							 ILinearAxis& front_slider_axis,
-							 ILimitSwitch& front_slider_home_switch)
-{
-	if (front_slider_axis.getAxisState().homed)
-	{
-		return true;
-	}
-
-	front_slider.home();
-	if (front_slider_axis.getAxisState().homed)
-	{
-		return true;
-	}
-
-	if (!front_slider_home_switch.waitForTrigger(kSliderHomeTimeout))
-	{
-		front_slider_axis.stop();
-		Logger::error(
-			"Front slider homing timed out. Start the robot with the front slider retracted.");
-		return false;
-	}
-
-	front_slider.home();
-	if (front_slider_axis.getAxisState().homed)
-	{
-		return true;
-	}
-
-	Logger::error(
-		"Front slider failed to home from lower limit only. Start the robot with the front slider retracted.");
-	return false;
 }
 
 bool MoveAxisToStartupLimit(ILinearAxis& axis,
@@ -297,39 +185,13 @@ bool ResetLiftModulesToStartupPose(ILinearAxis& first_lift_axis,
 int RunRobotController(IDriveSection& front_drive,
 					   IDriveSection& middle_drive,
 					   ILinearAxis& first_lift_axis,
-					   ILinearAxis& front_slider_axis,
 					   ILinearAxis& rear_slide_axis,
 					   ILinearAxis& rear_lift_axis,
 					   IFrontDistanceSensor& front_sensor,
 					   IDownwardSensor& front_downward_sensor,
 					   IDownwardSensor* middle_support_sensor,
-					   IDownwardSensor* rear_support_sensor,
-					   IImuSensor& imu_sensor,
-					   ILimitSwitch& front_slider_home_switch)
+					   IDownwardSensor* rear_support_sensor)
 {
-	FrontBalanceSlider front_slider(front_slider_axis);
-	if (RobotConfig::TestMode::BYPASS_FRONT_SLIDER)
-	{
-		front_slider_axis.stop();
-		Logger::warn("Front slider is bypassed for full-vehicle bring-up because it is not installed.");
-	}
-	else
-	{
-		if (!HomeFrontSliderIfNeeded(front_slider, front_slider_axis, front_slider_home_switch))
-		{
-			return 1;
-		}
-
-		front_slider.updateExtension(kInitialFrontSliderExtensionM);
-	}
-
-	PoseMonitor pose_monitor(&imu_sensor);
-	const auto initial_pose = imu_sensor.latestPose();
-	if (initial_pose.valid)
-	{
-		pose_monitor.updatePose(initial_pose);
-	}
-
 	bool middle_drop_seen_during_transfer = false;
 	const auto middle_support_confirmed = [middle_support_sensor, &middle_drop_seen_during_transfer]() {
 		if (middle_support_sensor == nullptr)
@@ -391,9 +253,8 @@ int RunRobotController(IDriveSection& front_drive,
 		front_sensor,
 		front_downward_sensor,
 		middle_support_sensor,
-		rear_support_sensor,
-		[&pose_monitor]() { return pose_monitor.isSafe(); });
-	SafetyManager safety_manager(&pose_monitor);
+		rear_support_sensor);
+	SafetyManager safety_manager;
 	ClimbingFsm climbing_fsm;
 	MotionCoordinator motion_coordinator(
 		front_segment,
@@ -419,14 +280,22 @@ int RunRobotController(IDriveSection& front_drive,
 		climbing_fsm,
 		motion_coordinator,
 		step_detector,
-		pose_monitor,
 		safety_manager);
 
-	// Require N consecutive invalid readings before declaring a fault.
-	// The HC-SR04 occasionally misses an echo return; a single invalid sample
-	// should not abort the climb.
+	// Require N consecutive invalid readings before declaring a fault, but
+	// only while the robot is actively using the front ultrasonic sensor to
+	// approach a step. After the front section climbs, "no echo" is expected
+	// often enough that treating it as a global emergency fault is too strict.
 	int front_distance_invalid_streak = 0;
-	safety_manager.addRule([&front_sensor, &front_distance_invalid_streak]() -> std::optional<SafetyStatus> {
+	safety_manager.addRule([&front_sensor,
+							&front_distance_invalid_streak,
+							&climbing_fsm]() -> std::optional<SafetyStatus> {
+		if (climbing_fsm.getCurrentState() != MotionState::ApproachingStep)
+		{
+			front_distance_invalid_streak = 0;
+			return std::nullopt;
+		}
+
 		if (!front_sensor.latest().valid)
 		{
 			++front_distance_invalid_streak;
@@ -439,7 +308,7 @@ int RunRobotController(IDriveSection& front_drive,
 				status.message =
 					"Front distance sensor invalid for " +
 					std::to_string(front_distance_invalid_streak) +
-					" consecutive checks.";
+					" consecutive checks during ApproachingStep.";
 				status.timestamp = SteadyClock::now();
 				return status;
 			}
@@ -638,16 +507,6 @@ int RunHardwareBringup()
 		RobotConfig::MCP23017::LIFT_1_LOWER_LIMIT,
 		LimitRole::Lower,
 		RobotConfig::Limits::ACTIVE_LOW);
-	Mcp23017LimitSwitch slide1_upper_limit(
-		mcp23017,
-		RobotConfig::MCP23017::SLIDE_1_UPPER_LIMIT,
-		LimitRole::Upper,
-		RobotConfig::Limits::ACTIVE_LOW);
-	Mcp23017LimitSwitch slide1_lower_limit(
-		mcp23017,
-		RobotConfig::MCP23017::SLIDE_1_LOWER_LIMIT,
-		LimitRole::Lower,
-		RobotConfig::Limits::ACTIVE_LOW);
 	Mcp23017LimitSwitch slide2_upper_limit(
 		mcp23017,
 		RobotConfig::MCP23017::SLIDE_2_UPPER_LIMIT,
@@ -671,15 +530,6 @@ int RunHardwareBringup()
 
 	failIfStartFailed("Lift-1 upper limit", lift1_upper_limit.start(), "Check MCP23017 GPA3 and active-low limit wiring.");
 	failIfStartFailed("Lift-1 lower limit", lift1_lower_limit.start(), "Check MCP23017 GPA4 and active-low limit wiring.");
-	if (RobotConfig::TestMode::BYPASS_FRONT_SLIDER)
-	{
-		Logger::warn("Front slider limit switches are bypassed because the front slider is not installed.");
-	}
-	else
-	{
-		failIfStartFailed("Slide-1 upper limit", slide1_upper_limit.start(), "Check MCP23017 GPA5 and active-low limit wiring.");
-		failIfStartFailed("Slide-1 lower limit", slide1_lower_limit.start(), "Check MCP23017 GPA6 and active-low limit wiring.");
-	}
 	failIfStartFailed("Slide-2 upper limit", slide2_upper_limit.start(), "Check MCP23017 GPA7 and active-low limit wiring.");
 	failIfStartFailed("Slide-2 lower limit", slide2_lower_limit.start(), "Check MCP23017 GPB0 and active-low limit wiring.");
 	failIfStartFailed("Lift-2 upper limit", lift2_upper_limit.start(), "Check MCP23017 GPB1 and active-low limit wiring.");
@@ -691,21 +541,15 @@ int RunHardwareBringup()
 		&lift1_upper_limit,
 		&lift1_lower_limit,
 		RobotConfig::Geometry::BODY_LIFT_MAX_TRAVEL_M);
-	LinearActuator front_slider_axis(
-		RobotConfig::MotorGPIO::SLIDE_1_IN1_IN3,
-		RobotConfig::MotorGPIO::SLIDE_1_IN2_IN4,
-		&slide1_upper_limit,
-		&slide1_lower_limit,
-		RobotConfig::Geometry::SLIDER_MAX_TRAVEL_M);
 	LinearActuator rear_slide_axis(
-		RobotConfig::MotorGPIO::SLIDE_2_IN1_IN3,
-		RobotConfig::MotorGPIO::SLIDE_2_IN2_IN4,
+		RobotConfig::MotorGPIO::SLIDE_2_TO_FRONT_GPIO,
+		RobotConfig::MotorGPIO::SLIDE_2_TO_REAR_GPIO,
 		&slide2_upper_limit,
 		&slide2_lower_limit,
 		RobotConfig::Geometry::SLIDER_MAX_TRAVEL_M);
 	LinearActuator rear_lift_axis(
-		RobotConfig::MotorGPIO::LIFT_2_IN1_IN3,
-		RobotConfig::MotorGPIO::LIFT_2_IN2_IN4,
+		RobotConfig::MotorGPIO::LIFT_2_TO_UPPER_GPIO,
+		RobotConfig::MotorGPIO::LIFT_2_TO_LOWER_GPIO,
 		&lift2_upper_limit,
 		&lift2_lower_limit,
 		RobotConfig::Geometry::BODY_LIFT_MAX_TRAVEL_M);
@@ -714,25 +558,16 @@ int RunHardwareBringup()
 		"Lift-1 actuator",
 		first_lift_axis.start(),
 		"Check DRV8833 #1 direct GPIO wiring: BCM10 -> IN1+IN3 and BCM9 -> IN2+IN4.");
-	if (RobotConfig::TestMode::BYPASS_FRONT_SLIDER)
-	{
-		Logger::warn("Slide-1 actuator GPIO outputs are bypassed because the front slider is not installed.");
-	}
-	else
-	{
-		failIfStartFailed(
-			"Slide-1 actuator",
-			front_slider_axis.start(),
-			"Check DRV8833 #3 direct GPIO wiring: BCM5 -> IN1+IN3 and BCM6 -> IN2+IN4.");
-	}
 	failIfStartFailed(
 		"Slide-2 actuator",
 		rear_slide_axis.start(),
-		"Check DRV8833 #4 direct GPIO wiring: BCM12 -> IN1+IN3 and BCM13 -> IN2+IN4.");
+		"Check DRV8833 #4 direct GPIO wiring: BCM12 -> IN1+IN3 and BCM13 -> IN2+IN4. "
+		"The main controller maps BCM13 as slide-to-front and BCM12 as slide-to-rear.");
 	failIfStartFailed(
 		"Lift-2 actuator",
 		rear_lift_axis.start(),
-		"Check DRV8833 #2 direct GPIO wiring: BCM11 -> IN1+IN3 and BCM7 -> IN2+IN4.");
+		"Check DRV8833 #2 direct GPIO wiring: BCM11 -> IN1+IN3 and BCM7 -> IN2+IN4. "
+		"The main controller maps BCM11 as lift-to-upper and BCM7 as lift-to-lower.");
 
 	// Abort bringup if any required hardware failed to start rather than
 	// continuing into the startup reset where failures would only manifest
@@ -773,33 +608,6 @@ int RunHardwareBringup()
 		return 1;
 	}
 
-	std::unique_ptr<IImuSensor> imu_sensor;
-	if (RobotConfig::TestMode::BYPASS_IMU)
-	{
-		Logger::warn("IMU is bypassed for full-vehicle bring-up because it is not installed.");
-		imu_sensor = std::make_unique<FixedPoseImuSensor>();
-	}
-	else
-	{
-		auto hardware_imu = std::make_unique<ImuSensor>();
-		if (hardware_imu->start() &&
-			WaitForValidImuSample(*hardware_imu, std::chrono::milliseconds(RobotConfig::Sensors::SENSOR_STALE_MS)))
-		{
-			Logger::info("Hardware IMU online.");
-			imu_sensor = std::move(hardware_imu);
-		}
-		else
-		{
-			if (hardware_imu)
-			{
-				hardware_imu->stop();
-			}
-
-			Logger::warn("IMU is optional. Falling back to a fixed neutral pose sensor.");
-			imu_sensor = std::make_unique<FixedPoseImuSensor>();
-		}
-	}
-
 	// Close the bringup signalfd before RunRobotController() creates its own.
 	// Any unread signal stays pending in the kernel queue and will be delivered
 	// to the new signalfd that RunRobotController() opens.
@@ -809,15 +617,12 @@ int RunHardwareBringup()
 		front_drive,
 		middle_drive,
 		first_lift_axis,
-		front_slider_axis,
 		rear_slide_axis,
 		rear_lift_axis,
 		front_sensor,
 		front_downward_sensor,
 		&middle_support_sensor,
-		&rear_support_sensor,
-		*imu_sensor,
-		slide1_lower_limit);
+		&rear_support_sensor);
 }
 }
 

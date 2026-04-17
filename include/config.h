@@ -13,61 +13,13 @@ namespace RobotConfig
 	namespace I2C
 	{
 		constexpr uint8_t BUS_ID = 1;				// Raspberry Pi default I2C bus
-		constexpr uint8_t PCA9685_ADDR = 0x40;		// Standalone PCA9685 test board address
 		constexpr uint8_t MCP23017_ADDR = 0x20;		// MCP23017 GPIO expander address
-		constexpr int PWM_FREQ = 1000;				// Shared PCA PWM frequency for standalone motor tests
-	}
-
-	namespace IMU
-	{
-		constexpr uint8_t ADDRESS = 0x68;			// MPU6050 device address
-		constexpr uint8_t POWER_MGMT_REG = 0x6B;	// Wake-up register
-		constexpr uint8_t ACCEL_START_REG = 0x3B;	// First accelerometer register
-		constexpr float ACCEL_SCALE = 16384.0f;		// LSB per g at +/-2g
-		constexpr float GYRO_SCALE = 131.0f;		// LSB per deg/s at +/-250deg/s
-		constexpr float COMPLEMENTARY_ALPHA = 0.98f;
 	}
 
 	namespace Platform
 	{
 		inline constexpr const char* GPIO_CHIP = "/dev/gpiochip0";
 		inline constexpr const char* I2C_DEVICE_PREFIX = "/dev/i2c-";
-	}
-
-	// Temporary bring-up switches for full-vehicle tests with incomplete hardware.
-	// Set both flags back to false once the IMU and front slider are installed.
-	namespace TestMode
-	{
-		constexpr bool BYPASS_IMU = true;
-		constexpr bool BYPASS_FRONT_SLIDER = true;
-	}
-
-	namespace PWM
-	{
-		constexpr float PCA9685_OSCILLATOR_HZ = 25'000'000.0F;
-		constexpr float PCA9685_RESOLUTION = 4096.0F;
-	}
-
-	// ==== Standalone PCA9685 diagnostic channel allocation (0-15) ====
-	// These channels are retained for independent PCA test tools only.
-	namespace PWM_Channels
-	{
-		constexpr uint8_t FRONT_L_IN1 = 0;
-		constexpr uint8_t FRONT_L_IN2 = 1;
-		constexpr uint8_t FRONT_R_IN3 = 2;
-		constexpr uint8_t FRONT_R_IN4 = 3;
-		constexpr uint8_t MIDDLE_L_IN1 = 4;
-		constexpr uint8_t MIDDLE_L_IN2 = 5;
-		constexpr uint8_t MIDDLE_R_IN3 = 6;
-		constexpr uint8_t MIDDLE_R_IN4 = 7;
-		constexpr uint8_t LIFT_1_IN1_IN3 = 8;
-		constexpr uint8_t LIFT_1_IN2_IN4 = 9;
-		constexpr uint8_t LIFT_2_IN1_IN3 = 10;
-		constexpr uint8_t LIFT_2_IN2_IN4 = 11;
-		constexpr uint8_t SLIDE_1_IN1_IN3 = 12;
-		constexpr uint8_t SLIDE_1_IN2_IN4 = 13;
-		constexpr uint8_t SLIDE_2_IN1_IN3 = 14;
-		constexpr uint8_t SLIDE_2_IN2_IN4 = 15;
 	}
 
 	// ==== Raspberry Pi direct GPIO allocation for the main robot ====
@@ -90,10 +42,14 @@ namespace RobotConfig
 		constexpr int LIFT_1_IN2_IN4 = 9;	// Physical pin 21
 		constexpr int LIFT_2_IN1_IN3 = 11;	// Physical pin 23
 		constexpr int LIFT_2_IN2_IN4 = 7;	// Physical pin 26
-		constexpr int SLIDE_1_IN1_IN3 = 5;	// Physical pin 29
-		constexpr int SLIDE_1_IN2_IN4 = 6;	// Physical pin 31
 		constexpr int SLIDE_2_IN1_IN3 = 12;	// Physical pin 32
 		constexpr int SLIDE_2_IN2_IN4 = 13;	// Physical pin 33
+		// Logical direction aliases for modules whose physical installation
+		// direction differs from the generic IN1/IN2 naming.
+		constexpr int LIFT_2_TO_UPPER_GPIO = LIFT_2_IN1_IN3;
+		constexpr int LIFT_2_TO_LOWER_GPIO = LIFT_2_IN2_IN4;
+		constexpr int SLIDE_2_TO_FRONT_GPIO = SLIDE_2_IN2_IN4;
+		constexpr int SLIDE_2_TO_REAR_GPIO = SLIDE_2_IN1_IN3;
 	}
 
 	// Direct GPIOs that remain on the Raspberry Pi for non-motor hardware.
@@ -102,7 +58,7 @@ namespace RobotConfig
 		constexpr int ULTRASONIC_TRIG = 16;	// Physical pin 36
 		constexpr int ULTRASONIC_ECHO = 26;	// Physical pin 37
 		constexpr unsigned int FRONT_DOWNWARD_DO = 4;	// Physical pin 7
-		constexpr unsigned int MIDDLE_SUPPORT_DO = 5;	// Physical pin 29; front slider is currently bypassed
+		constexpr unsigned int MIDDLE_SUPPORT_DO = 5;	// Physical pin 29
 		constexpr unsigned int REAR_SUPPORT_DO = 21;	// Physical pin 40
 		constexpr unsigned int MCP23017_INTA = 19;	// Physical pin 35 — port-A interrupt
 		constexpr unsigned int MCP23017_INTB = 20;	// Physical pin 38 — port-B interrupt
@@ -131,8 +87,6 @@ namespace RobotConfig
 		// Limit switches, wired to ground and read with pull-ups enabled
 		constexpr uint8_t LIFT_1_UPPER_LIMIT = 3;	// GPA3
 		constexpr uint8_t LIFT_1_LOWER_LIMIT = 4;	// GPA4
-		constexpr uint8_t SLIDE_1_UPPER_LIMIT = 5;	// GPA5
-		constexpr uint8_t SLIDE_1_LOWER_LIMIT = 6;	// GPA6
 		constexpr uint8_t SLIDE_2_UPPER_LIMIT = 7;	// GPA7
 		constexpr uint8_t SLIDE_2_LOWER_LIMIT = 8;	// GPB0
 		constexpr uint8_t LIFT_2_UPPER_LIMIT = 9;	// GPB1
@@ -173,19 +127,9 @@ namespace RobotConfig
 
 	namespace Geometry
 	{
-		constexpr float SLIDER_HOME_OFFSET_M = 0.0f;
 		constexpr float SLIDER_MAX_TRAVEL_M = 0.18f;
 		constexpr float BODY_LIFT_MAX_TRAVEL_M = 0.20f;
 		constexpr float POSITION_TOLERANCE_M = 0.005f;
-	}
-
-	namespace Servo
-	{
-		constexpr float MIN_ANGLE_DEG = 0.0F;
-		constexpr float MAX_ANGLE_DEG = 180.0F;
-		constexpr float MIN_PULSE_WIDTH_US = 500.0F;
-		constexpr float MAX_PULSE_WIDTH_US = 2500.0F;
-		constexpr float SAFE_ANGLE_DEG = 90.0F;
 	}
 
 	namespace Limits
@@ -218,6 +162,11 @@ namespace RobotConfig
 		// reached the step surface, keep lifting briefly so the front assembly
 		// fully clears and settles onto the stair before raising the middle.
 		constexpr int FRONT_LANDING_EXTRA_LIFT_S = 7;
+		// After a downward sensor confirms landing, keep the front and middle
+		// drive wheels moving briefly so the section fully rolls onto the stair
+		// surface before the next actuator phase.
+		constexpr int FRONT_LANDING_EXTRA_DRIVE_MS = 1000;
+		constexpr int MIDDLE_LANDING_EXTRA_DRIVE_MS = 100;
 		// Maximum time (seconds) to wait for a slider limit switch to confirm.
 		constexpr int SLIDER_CONFIRM_TIMEOUT_S = 30;
 		// Maximum time (seconds) to wait for the slow high-torque lift modules.
@@ -234,7 +183,6 @@ namespace RobotConfig
 	// ==== Real-time and control parameters ====
 	namespace Realtime
 	{
-		constexpr int IMU_POLLINGS_MS = 10;			// IMU data sampling period (100Hz)
 		constexpr int ULTRASONIC_POLLING_MS = 50;	// Ultrasonic sampling period (20Hz)
 		constexpr int SENSOR_TASK_PRIORITY = 80;
 		constexpr int MOTION_TASK_PRIORITY = 70;
