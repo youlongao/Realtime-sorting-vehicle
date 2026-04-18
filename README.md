@@ -68,6 +68,9 @@ In terms of the development process, the project was more suitable to move forwa
 
 ## Required Hardware and Wiring Diagram
 
+<img width="808" height="545" alt="image" src="https://github.com/user-attachments/assets/b40e81a8-6464-44d9-8ddf-b69a1eb7f966" />
+
+
 This section is left blank for now. The current repository has already fixed the pin mappings of Raspberry Pi GPIO, the MCP23017 input expander, the ultrasonic sensor, three downward/support sensors, and each drive channel in `include/config.h`. However, to avoid inconsistency between the document and the actual hardware version, we do not write a fixed hardware list and wiring diagram here in advance. After the final whole-machine wiring version is fully confirmed, the formal module list, GPIO mapping, MCP23017 port allocation, and schematic diagram can be added to this section as a unified reference for reproduction and assessment.
 
 Before the formal wiring diagram is completed, the hardware BOM of this project can first be maintained using the table below. The current table mainly includes the key components that have already appeared clearly in the code or can be directly inferred from it. The model numbers and purchase links are temporarily left as they are and can be completed later after the procurement and assembly plan is fully decided.
